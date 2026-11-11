@@ -30,7 +30,7 @@ export function NotificationSettings({
       <p>You can always review pending Requests in Clipp.</p>
       {state?.displayError && (
         <p role="alert">
-          Notification display failed. Open Requests to review pending work.
+          Notification display failed. Open Devices to review pending requests.
         </p>
       )}
       {error && (

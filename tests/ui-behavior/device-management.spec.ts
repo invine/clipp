@@ -210,7 +210,7 @@ test("alias drafts survive observation changes and supported task suspension", a
     .getByRole("button", { name: "Open Requests notification" })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Requests", exact: true })
+    page.getByRole("heading", { name: "Devices", exact: true })
   ).toBeVisible();
   await page.getByRole("button", { name: "Return to device editor" }).click();
   await expect(alias).toHaveValue("newest draft");

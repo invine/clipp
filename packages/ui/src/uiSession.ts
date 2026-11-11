@@ -153,7 +153,7 @@ export function createUiSession() {
       if (occupied() && !matching && !notification) return "declined" as const;
       if (
         notification &&
-        (state.destination !== "requests" || state.tasks.length)
+        (state.destination !== "devices" || state.tasks.length)
       ) {
         const {
           destination: previousDestination,
@@ -215,12 +215,12 @@ export function createUiSession() {
           }
         } else if (destination.kind === "requests") {
           update({
-            destination: "requests",
+            destination: "devices",
             taskNotice: null,
             showNav: false,
             focusKey: destination.entity
               ? `request:${destination.entity}`
-              : "destination:requests",
+              : "destination:devices",
           });
           if (
             destination.entity &&
@@ -228,7 +228,8 @@ export function createUiSession() {
           ) {
             result = "unavailable";
             update({
-              taskNotice: "This Request is no longer available. Open Requests.",
+              taskNotice: "This Request is no longer available.",
+              focusKey: "destination:devices",
             });
           }
         } else if (destination.kind === "relays")

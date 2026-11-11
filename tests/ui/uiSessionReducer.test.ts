@@ -34,7 +34,7 @@ it("owns task nesting, return focus intent, and notification suspension as pure 
     requestAvailable: true,
   });
   expect(requests).toMatchObject({
-    destination: "requests",
+    destination: "devices",
     tasks: [],
     focusKey: "request:pending-request",
     notificationReturn: {

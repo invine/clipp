@@ -8,7 +8,7 @@ export function pairingSubmissionMessage(
 ): string {
   if (result.ok) return "Request submitted. Waiting for approval.";
   if (result.error === "outcome_unconfirmed")
-    return "Submission outcome unconfirmed. Check Requests before retrying.";
+    return "Submission outcome unconfirmed. Check Devices before retrying.";
   if (result.error === "invalid" || result.error === "invalid_pairing_target")
     return "Invalid pairing payload. Edit the text and try again.";
   return "Unable to submit pairing request. Check the device address and connection, then retry.";

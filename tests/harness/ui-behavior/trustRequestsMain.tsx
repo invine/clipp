@@ -74,7 +74,7 @@ function makeAdapter(
 
 const session = createUiSession();
 session.update({
-  destination: location.search === "?devices" ? "devices" : "requests",
+  destination: "devices",
 });
 
 function ScenarioControls({

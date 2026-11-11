@@ -55,9 +55,9 @@ it("actual preload retains cold notification entry until authoritative Requests 
   authority.ready = true;
   await consumer.refresh();
   expect(session.getSnapshot()).toMatchObject({
-    destination: "requests",
+    destination: "devices",
     tasks: [],
-    taskNotice: "This Request is no longer available. Open Requests.",
+    taskNotice: "This Request is no longer available.",
   });
   expect(mockEntries.read()).toEqual([]);
   expect(session.pairing.getSnapshot().raw).toBe("retained input");

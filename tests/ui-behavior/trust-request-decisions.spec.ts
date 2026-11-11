@@ -4,10 +4,12 @@ test.beforeEach(async ({ page }) => {
   await page.goto("/trust-requests.html");
 });
 
-test("a pending decision is sent once and reports local admission separately from delivery", async ({
+test("a pending decision is sent once without rendering decision feedback", async ({
   page,
 }) => {
-  const accept = page.getByRole("button", { name: "Accept", exact: true });
+  const accept = page.getByRole("button", {
+    name: "Approve request from Peer One",
+  });
   await accept.dblclick();
   await expect(accept).toBeDisabled();
   await expect(page.getByTestId("trust-effects")).toHaveText(
@@ -23,21 +25,25 @@ test("a pending decision is sent once and reports local admission separately fro
     .getByRole("button", { name: "Resolve Accept: admitted locally" })
     .click();
   await expect(
-    page.getByRole("status").filter({
-      hasText: "Device admitted locally. Response delivery is not confirmed.",
-    })
-  ).toBeVisible();
+    page.getByText(
+      "Device admitted locally. Response delivery is not confirmed."
+    )
+  ).toHaveCount(0);
 
   await page
     .getByRole("button", { name: "Publish no pending requests" })
     .click();
-  await expect(page.getByText("No pending requests.")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Trust requests" })
+  ).toHaveCount(0);
 });
 
 test("a replaced request version does not receive an earlier decision result", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "Accept", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Approve request from Peer One" })
+    .click();
   await page
     .getByRole("button", { name: "Publish replacement request" })
     .click();
@@ -52,16 +58,18 @@ test("a replaced request version does not receive an earlier decision result", a
   );
 
   await expect(
-    page.getByRole("button", { name: "Reject", exact: true })
+    page.getByRole("button", { name: "Reject request from Peer One" })
   ).toBeEnabled();
-  await page.getByRole("button", { name: "Reject", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Reject request from Peer One" })
+    .click();
   await expect(page.getByTestId("trust-effects")).toContainText(
     "reject:peer-one:request-v2"
   );
   await page
     .getByRole("button", { name: "Resolve Reject: rejected locally" })
     .click();
-  await expect(page.getByText("Request rejected locally.")).toBeVisible();
+  await expect(page.getByText("Request rejected locally.")).toHaveCount(0);
   await page
     .getByRole("button", { name: "Attempt Settings navigation" })
     .click();
@@ -71,10 +79,12 @@ test("a replaced request version does not receive an earlier decision result", a
 test("identity rotation retires pending approval feedback", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "Accept", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Approve request from Peer One" })
+    .click();
   await page.getByRole("button", { name: "Rotate identity" }).click();
   await expect(
-    page.getByRole("button", { name: "Accept", exact: true })
+    page.getByRole("button", { name: "Approve request from Peer One" })
   ).toBeEnabled();
   await page
     .getByRole("button", { name: "Resolve Accept: admitted locally" })
@@ -87,10 +97,12 @@ test("identity rotation retires pending approval feedback", async ({
 test("replacing the runtime owner retires the previous approval result", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "Accept", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Approve request from Peer One" })
+    .click();
   await page.getByRole("button", { name: "Replace runtime owner" }).click();
   await expect(
-    page.getByRole("button", { name: "Accept", exact: true })
+    page.getByRole("button", { name: "Approve request from Peer One" })
   ).toBeEnabled();
   await page
     .getByRole("button", { name: "Resolve Accept: admitted locally" })
@@ -100,10 +112,12 @@ test("replacing the runtime owner retires the previous approval result", async (
   ).toHaveCount(0);
 });
 
-test("unconfirmed outcomes remain visible and do not claim Membership Reconciliation", async ({
+test("unconfirmed decision outcomes do not render feedback", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "Reject", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Reject request from Peer One" })
+    .click();
   await page
     .getByRole("button", { name: "Resolve decision: unconfirmed" })
     .click();
@@ -111,14 +125,16 @@ test("unconfirmed outcomes remain visible and do not claim Membership Reconcilia
     page.getByText(
       "Decision outcome unconfirmed. Refresh Requests and Devices before retrying."
     )
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(page.getByText(/Membership Reconciliation/)).toHaveCount(0);
 });
 
 test("loading or unavailable Requests suppresses trust decisions", async ({
   page,
 }) => {
-  const accept = page.getByRole("button", { name: "Accept", exact: true });
+  const accept = page.getByRole("button", {
+    name: "Approve request from Peer One",
+  });
   await page.getByRole("button", { name: "Publish Requests loading" }).click();
   await expect(accept).toBeDisabled();
   await page
@@ -167,7 +183,7 @@ test("Devices shows a request between identity and trusted devices and hides it 
     page.getByText(
       "Device admitted locally. Response delivery is not confirmed."
     )
-  ).toBeVisible();
+  ).toHaveCount(0);
 });
 
 test("Devices handles concurrent requests independently and blocks stale decisions", async ({
@@ -330,4 +346,30 @@ test("same-named Trust Requests have independently identifiable decision actions
   await expect(page.getByTestId("trust-effects")).toHaveText(
     "reject:peer-two:request-two"
   );
+});
+
+test("navigation shows the current incoming request count on Devices", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/trust-requests.html?devices");
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  const nav = page.getByRole("navigation", { name: "Clipp destinations" });
+  const devices = nav.getByRole("button", { name: /^Devices/ });
+  await expect(devices).toHaveText("Devices (1)");
+  await expect(nav.getByRole("button", { name: "Requests" })).toHaveCount(0);
+  await expect(nav.getByRole("button", { name: "Pinned" })).toHaveCount(0);
+  await expect(nav.getByRole("button", { name: "Links" })).toHaveCount(0);
+  await page.locator(".workspace-navigation-scrim").click();
+  await page
+    .getByRole("button", { name: "Publish two pending requests" })
+    .click();
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await expect(devices).toHaveText("Devices (2)");
+  await page.locator(".workspace-navigation-scrim").click();
+  await page
+    .getByRole("button", { name: "Publish no pending requests" })
+    .click();
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await expect(devices).toHaveText("Devices");
 });
