@@ -51,6 +51,7 @@ function adapterHarness() {
   const calls: string[] = [];
   const connection = {
     verifiedPeerId: peer,
+    address,
     close: jest.fn(async () => {
       calls.push("close");
     }),
@@ -756,6 +757,60 @@ describe("discovery freshness", () => {
 });
 
 describe("session renewal", () => {
+  it("reports the renewal timer and classifies authentication failure without raw errors", async () => {
+    jest.useFakeTimers({ now: 1_000_000 });
+    const { adapter } = adapterHarness();
+    const report = jest.fn();
+    adapter.onRenewalDiagnostic = report;
+    (adapter.authenticate as jest.Mock)
+      .mockResolvedValueOnce({
+        sessionExpiresAt: 1_030_000,
+        renewAfterMillis: 1_000,
+      })
+      .mockRejectedValueOnce(new Error("private error with token canary"));
+    const controller = new ManagedRelayController(adapter);
+    try {
+      await controller.setConfigurations([
+        {
+          key: "private-relay-key",
+          name: "Private relay",
+          kind: "managed",
+          discoveryUrl: "https://private.example/v1/relay",
+        },
+      ]);
+      await jest.advanceTimersByTimeAsync(1_000);
+
+      expect(report.mock.calls.map(([event]) => event)).toEqual([
+        {
+          phase: "scheduled",
+          at: 1_000_000,
+          scheduledAt: 1_001_000,
+          sessionExpiresAt: 1_030_000,
+          transport: "wss",
+        },
+        {
+          phase: "timer_fired",
+          at: 1_001_000,
+          scheduledAt: 1_001_000,
+          sessionExpiresAt: 1_030_000,
+          transport: "wss",
+        },
+        { phase: "started", at: 1_001_000, transport: "wss" },
+        { phase: "authenticating", at: 1_001_000, transport: "wss" },
+        {
+          phase: "failed",
+          at: 1_001_000,
+          transport: "wss",
+          stage: "authentication",
+          reason: "unexpected_failure",
+        },
+      ]);
+    } finally {
+      await controller.stop();
+      jest.useRealTimers();
+    }
+  });
+
   it("keeps the existing reservation after a limit refusal and renews the same connection after the hint", async () => {
     const { adapter, connection } = adapterHarness();
     let now = 1_000_000;

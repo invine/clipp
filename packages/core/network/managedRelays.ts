@@ -230,6 +230,7 @@ export function normalizeRelayAuthResponse(raw: unknown): RelayAuthResult {
 
 export type ManagedRelayConnection = {
   verifiedPeerId: string;
+  address?: string;
   initialAuthDeadlineMs?: number;
   close(): Promise<void>;
 };
@@ -262,6 +263,37 @@ export function relayTransportPriority(address: string): number {
   if (/\/(?:wss?|tls\/ws)\/p2p\//.test(address)) return 1;
   return 0;
 }
+
+type RenewalStage = "access_token" | "authentication";
+type RenewalDiagnostic =
+  | {
+      phase: "scheduled" | "timer_fired";
+      scheduledAt: number;
+      sessionExpiresAt: number;
+    }
+  | { phase: "started" | "token_unavailable" | "authenticating" | "succeeded" }
+  | { phase: "failed"; stage: RenewalStage; reason: string };
+
+export type RelayRenewalDiagnostic = RenewalDiagnostic & {
+  at: number;
+  transport: "tcp" | "wss" | "webrtc_direct" | "unknown";
+};
+
+const RENEWAL_DIAGNOSTIC_REASONS = new Set([
+  "authentication_failed",
+  "invalid_credentials",
+  "quota_exhausted",
+  "session_limit_exceeded",
+  "unsupported_protocol",
+  "temporarily_unavailable",
+  "rate_limited",
+  "deadline_exceeded",
+  "relay_access_timeout",
+  "relay_access_disconnected",
+  "relay_access_unavailable",
+  "invalid_auth_result",
+]);
+
 export type ManagedRelayAdapter = {
   accessToken(
     discoveryUrl: string,
@@ -299,6 +331,7 @@ export type ManagedRelayAdapter = {
     signal: AbortSignal
   ): Promise<void>;
   onStateChange?(states: RelayState[]): void;
+  onRenewalDiagnostic?(event: RelayRenewalDiagnostic): void;
 };
 
 type RetrySchedule = {
@@ -817,7 +850,7 @@ export class ManagedRelayController {
       entry.authFailure = undefined;
       entry.authRetry.retryAt = 0;
       entry.authRetry.attempt = 0;
-      if (authResult) this.scheduleRenewal(entry, authResult);
+      if (authResult) this.scheduleRenewal(entry, connection, authResult);
       await this.register(entry, connection);
       if (!this.current(entry, generation)) return;
       this.rendezvousEstablished(entry);
@@ -1093,7 +1126,28 @@ export class ManagedRelayController {
     )
       throw new Error("invalid_auth_result");
   }
-  private scheduleRenewal(entry: Entry, result: RelayAuthResult): void {
+  private reportRenewal(
+    connection: ManagedRelayConnection,
+    event: RenewalDiagnostic
+  ): void {
+    const address = connection.address;
+    this.adapter.onRenewalDiagnostic?.({
+      ...event,
+      at: this.now(),
+      transport: address?.includes("/webrtc-direct/")
+        ? "webrtc_direct"
+        : address && /\/(?:wss?|tls\/ws)\/p2p\//.test(address)
+          ? "wss"
+          : address?.includes("/tcp/")
+            ? "tcp"
+            : "unknown",
+    });
+  }
+  private scheduleRenewal(
+    entry: Entry,
+    connection: ManagedRelayConnection,
+    result: RelayAuthResult
+  ): void {
     entry.authExpiresAt = result.sessionExpiresAt;
     if (entry.renewTimer) clearTimeout(entry.renewTimer);
     if (entry.authExpiryTimer) clearTimeout(entry.authExpiryTimer);
@@ -1103,29 +1157,41 @@ export class ManagedRelayController {
       },
       Math.max(0, result.sessionExpiresAt - this.now())
     );
+    const now = this.now();
     const delay = Math.max(
       0,
-      Math.min(result.renewAfterMillis, result.sessionExpiresAt - this.now())
+      Math.min(result.renewAfterMillis, result.sessionExpiresAt - now)
     );
+    const timing = {
+      scheduledAt: now + delay,
+      sessionExpiresAt: result.sessionExpiresAt,
+    };
     entry.renewTimer = setTimeout(() => {
+      this.reportRenewal(connection, { phase: "timer_fired", ...timing });
       void this.renew(entry);
     }, delay);
+    this.reportRenewal(connection, { phase: "scheduled", ...timing });
   }
   private async renew(entry: Entry): Promise<void> {
     if (entry.renewFlight) return entry.renewFlight;
     const connection = entry.connection;
     const generation = entry.generation;
     if (!connection || entry.config.kind !== "managed") return;
+    this.reportRenewal(connection, { phase: "started" });
     const flight = (async () => {
+      let stage: RenewalStage = "access_token";
       try {
         const token = await this.token(entry);
         if (!this.current(entry, generation) || entry.connection !== connection)
           return;
         if (!token) {
+          this.reportRenewal(connection, { phase: "token_unavailable" });
           entry.authFailure = { status: "login_needed" };
           this.publishSessionState(entry);
           return;
         }
+        stage = "authentication";
+        this.reportRenewal(connection, { phase: "authenticating" });
         const result = await this.deadline(
           DEADLINES.auth,
           entry.controller.signal,
@@ -1134,7 +1200,8 @@ export class ManagedRelayController {
         if (!this.current(entry, generation) || entry.connection !== connection)
           return;
         this.validateAuthResult(result);
-        this.scheduleRenewal(entry, result);
+        this.reportRenewal(connection, { phase: "succeeded" });
+        this.scheduleRenewal(entry, connection, result);
         if (entry.authRetry.retryTimer)
           clearTimeout(entry.authRetry.retryTimer);
         entry.authRetry.retryTimer = undefined;
@@ -1147,7 +1214,7 @@ export class ManagedRelayController {
       } catch (error) {
         if (!this.current(entry, generation) || entry.connection !== connection)
           return;
-        this.renewalFailure(entry, error);
+        this.renewalFailure(entry, connection, stage, error);
       }
     })();
     entry.renewFlight = flight;
@@ -1157,13 +1224,25 @@ export class ManagedRelayController {
       entry.renewFlight = undefined;
     }
   }
-  private renewalFailure(entry: Entry, error: unknown): void {
+  private renewalFailure(
+    entry: Entry,
+    connection: ManagedRelayConnection,
+    stage: RenewalStage,
+    error: unknown
+  ): void {
     const code =
       error instanceof RelayOperationError
         ? error.code
         : error instanceof Error
           ? error.message
           : "unknown_error";
+    this.reportRenewal(connection, {
+      phase: "failed",
+      stage,
+      reason: RENEWAL_DIAGNOSTIC_REASONS.has(code)
+        ? code
+        : "unexpected_failure",
+    });
     if (code === "invalid_credentials" || code === "authentication_failed") {
       if (entry.authRetry.retryTimer) clearTimeout(entry.authRetry.retryTimer);
       entry.authRetry.retryTimer = undefined;

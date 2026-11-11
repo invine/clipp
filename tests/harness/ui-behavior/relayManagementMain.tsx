@@ -128,8 +128,8 @@ function Scenario() {
           onRetry={onRetry}
         />
       ) : (
-        <section aria-label="Requests page">
-          <h2>Requests</h2>
+        <section aria-label="Devices page">
+          <h2>Devices</h2>
           <button type="button" onClick={() => session.back()}>
             Return to relay editor
           </button>

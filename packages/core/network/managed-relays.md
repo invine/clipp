@@ -19,3 +19,19 @@ Peer ID ownership remains claimed until its reservation is released and connecti
 Relay Authentication must half-close the request after writing its single framed JSON message. Current libp2p message streams expose that operation as `close()`; older streams expose `closeWrite()`. Start the response reader before sending request EOF so a fast reply and remote close cannot precede its read listeners.
 
 The host identifies a newly created Circuit Relay listener by its reservation store, not its constructor name: Android and extension production builds minify class names. Successful reservation still requires an event for the authenticated connection and a newly advertised circuit address.
+
+## Renewal diagnostics
+
+Filter debug output for `relay.session_renewal` and `relay.access_token`. The
+first records the scheduled and actual timer times, session expiry, transport,
+and authentication outcome. The second records whether the client reused a
+cached Access Token, joined an in-flight refresh, or attempted its own refresh.
+Times use Unix milliseconds. The logs contain fixed outcome codes and omit
+credentials, relay addresses, account identifiers, and raw errors.
+
+- Electron emits both events from the main process. Launch with
+  `CLIPP_LOG_LEVEL=debug` to capture them in its terminal output.
+- Android emits both events in the WebView console of a debuggable build.
+  Show Verbose messages in Chrome DevTools when inspecting that WebView.
+- Chrome emits the events in separate offscreen and service worker consoles.
+  See [Chrome managed relay setup](../../../apps/extension/README-managed-relays.md).

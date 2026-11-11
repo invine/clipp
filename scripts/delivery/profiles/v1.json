@@ -1,0 +1,235 @@
+{
+  "schema": 1,
+  "preflight": { "minimumFreeBytes": 3221225472 },
+  "candidateGeneratedOutputs": [
+    "/.local/startup-replay-*/",
+    "/test-results/.last-run.json"
+  ],
+  "commonChecks": [
+    { "id": "lint", "command": ["npm", "run", "lint"] },
+    { "id": "typecheck", "command": ["npm", "run", "typecheck"] },
+    { "id": "jest", "command": ["npm", "test", "--", "--runInBand"] },
+    { "id": "candidate-tooling", "command": ["npm", "run", "check:candidate"] },
+    { "id": "delivery-tooling", "command": ["npm", "run", "check:delivery"] },
+    {
+      "id": "electron-build",
+      "command": ["npm", "--workspace", "apps/electron", "run", "build"]
+    },
+    {
+      "id": "android-web-build",
+      "command": ["npm", "--workspace", "apps/android", "run", "build"]
+    },
+    {
+      "id": "chrome-build",
+      "command": ["npm", "--workspace", "apps/extension", "run", "build"]
+    },
+    { "id": "ui-behavior", "command": ["npm", "run", "test:ui-behavior"] }
+  ],
+  "androidQualification": {
+    "apis": [31, 33, 34, 35, 36],
+    "unitCheck": "android-native-unit",
+    "matrixChecks": [
+      "android-native-matrix-api31",
+      "android-native-matrix-api33",
+      "android-native-matrix-api34",
+      "android-native-matrix-api35",
+      "android-native-matrix-api36"
+    ],
+    "matrixClasses": [
+      "ManagedRelayCredentialStoreTest",
+      "BackgroundContinuityLifecycleTest",
+      "BackgroundContinuityManifestTest",
+      "BackgroundContinuityDiagnosticsTest"
+    ],
+    "matrixCases": [
+      "com.clipp.app.ManagedRelayCredentialStoreTest#fixturesRejectTheOperatorApplication",
+      "com.clipp.app.ManagedRelayCredentialStoreTest#onlyExactPrivateCallbackResolvesToClipp",
+      "com.clipp.app.ManagedRelayCredentialStoreTest#nativeCredentialKeyCannotBeExported",
+      "com.clipp.app.ManagedRelayCredentialStoreTest#recreatedNativeStoreRetainsOnlyEndpointScopedRenewableCredentials",
+      "com.clipp.app.ManagedRelayCredentialStoreTest#ciphertextIsAuthenticatedAndCorruptionRequiresLogin",
+      "com.clipp.app.ManagedRelayCredentialStoreTest#missingKeystoreKeyErasesRestoredCiphertext",
+      "com.clipp.app.ManagedRelayCredentialStoreTest#ciphertextFileIsExcludedFromCloudBackupAndDeviceTransfer",
+      "com.clipp.app.BackgroundContinuityLifecycleTest#serviceStartupPublishesPrivacySafeStatusAndOnlyAppliedAutoSyncAction",
+      "com.clipp.app.BackgroundContinuityLifecycleTest#notificationTapsWaitForAppliedStateAndOldActionsCannotUndoResume",
+      "com.clipp.app.BackgroundContinuityLifecycleTest#unknownAutoSyncOffersOnlyStopUntilAnAppliedUpdateArrives",
+      "com.clipp.app.BackgroundContinuityLifecycleTest#serviceHoldsPartialWakeLockUntilUserStops",
+      "com.clipp.app.BackgroundContinuityLifecycleTest#heartbeatLossStopsTheEmptyServiceAndRecordsAnObservedFailure",
+      "com.clipp.app.BackgroundContinuityLifecycleTest#removingTheApplicationTaskStopsBackgroundContinuity",
+      "com.clipp.app.BackgroundContinuityLifecycleTest#rebootOffersReconnectWithoutStartingTheService",
+      "com.clipp.app.BackgroundContinuityLifecycleTest#blockedNotificationAvailabilityDoesNotCountAsARuntimeFailure",
+      "com.clipp.app.BackgroundContinuityLifecycleTest#ingressAndPendingApplicationDiagnosticsNeverContainTheirPayloadsOrIdentifiers",
+      "com.clipp.app.BackgroundContinuityManifestTest#backgroundContinuityDeclaresPartialWakeLockPermission",
+      "com.clipp.app.BackgroundContinuityManifestTest#taskRemovalIsDeliveredToBackgroundContinuityService",
+      "com.clipp.app.BackgroundContinuityManifestTest#androidDiscoversProcessTextAndSharesheetIngress",
+      "com.clipp.app.BackgroundContinuityManifestTest#explicitTextQueueSurvivesRestartAndPreservesRepeatedEventIdentity",
+      "com.clipp.app.BackgroundContinuityManifestTest#persistenceFailureNeverReportsAnActionAsQueued",
+      "com.clipp.app.BackgroundContinuityManifestTest#actionQueueUpdatesAreAtomicAcrossStoreInstances",
+      "com.clipp.app.BackgroundContinuityManifestTest#coldProcessTextIntentReachesTheDurableQueueBeforeRuntimeLaunch",
+      "com.clipp.app.BackgroundContinuityManifestTest#warmSharesheetIntentReachesTheDurableQueue",
+      "com.clipp.app.BackgroundContinuityDiagnosticsTest#exportIsBoundedAndUsesOnlyThePrivacyReviewedSchema",
+      "com.clipp.app.BackgroundContinuityDiagnosticsTest#repeatedObservedFailuresMarkTheConfigurationLimitedAndEnableGuidance",
+      "com.clipp.app.BackgroundContinuityDiagnosticsTest#diagnosticExportReusesOneBoundedCacheFile",
+      "com.clipp.app.BackgroundContinuityDiagnosticsTest#reconnectDurationDoesNotSpanStoppedSessions"
+    ],
+    "requiredCases": 28,
+    "jdkMajor": 21,
+    "gradleVersion": "8.11.1",
+    "sdkBuildTools": "35.0.0",
+    "aapt2Version": "2.19-11948202",
+    "minimumApi": 31,
+    "timeoutMs": { "unit": 600000, "candidate": 1200000, "matrix": 1200000 }
+  },
+  "androidPackage": {
+    "applicationId": "com.clipp.app",
+    "capacitorGeneratedWebAssets": ["cordova.js", "cordova_plugins.js"],
+    "bundletoolVersion": "1.17.2",
+    "modes": ["upload", "unsigned-artifact", "debug"],
+    "releaseChecks": [
+      "android-release-apk-build",
+      "android-release-aab-build",
+      "android-bundle-manifest",
+      "android-package-manifest",
+      "android-package-web-assets",
+      "android-package-signature"
+    ],
+    "debugChecks": [
+      "android-debug-apk-build",
+      "android-package-manifest",
+      "android-package-web-assets",
+      "android-package-signature"
+    ],
+    "gradleTimeoutMs": 900000
+  },
+  "electronPackage": {
+    "applicationFiles": ["dist/**/*"],
+    "resourceFiles": [
+      "clipp-appicon-256.png",
+      "clipp-tray.png",
+      "clipp-tray@2x.png",
+      "clipp-trayTemplate.svg",
+      "clipp-trayTemplate.png",
+      "clipp-trayTemplate@2x.png",
+      "clipp-trayTemplate-16.png",
+      "clipp-trayTemplate-16@2x.png",
+      "clipp-trayTemplate-32.png",
+      "clipp-trayTemplate-64.png"
+    ]
+  },
+  "chromeLocal": {
+    "checks": [
+      {
+        "id": "chrome-identity",
+        "script": "apps/extension/scripts/verify-identity-initialization.mjs",
+        "artifact": true,
+        "timeoutMs": 120000
+      },
+      {
+        "id": "chrome-pairing",
+        "script": "apps/extension/scripts/verify-pairing-response.mjs",
+        "artifact": false,
+        "timeoutMs": 120000
+      },
+      {
+        "id": "chrome-offscreen-storage",
+        "script": "apps/extension/scripts/verify-offscreen-storage.mjs",
+        "artifact": true,
+        "timeoutMs": 120000
+      },
+      {
+        "id": "chrome-managed-relay",
+        "script": "apps/extension/scripts/verify-managed-relay-mv3.mjs",
+        "artifact": true,
+        "timeoutMs": 120000
+      },
+      {
+        "id": "chrome-populated-history",
+        "script": "apps/extension/scripts/verify-popup-history-performance.mjs",
+        "artifact": true,
+        "timeoutMs": 120000
+      }
+    ],
+    "historyPerformance": {
+      "fixtureRows": 43,
+      "widths": [480, 320],
+      "optionsWidth": 1440,
+      "standardWidthRepetitions": 3,
+      "longLabel": "Extension",
+      "measurementBoundary": "page navigation through initial ResizeObserver commit",
+      "maxElapsedMs": 1000,
+      "maxSynchronousLabelLayoutReads": 0
+    }
+  },
+  "targets": {
+    "electron-package": {
+      "dependsOn": [],
+      "checks": [
+        "common-verify",
+        "ui-behavior",
+        "electron-inventory",
+        "electron-native-webrtc",
+        "electron-quit"
+      ],
+      "signing": "unsigned-local",
+      "destination": "artifact"
+    },
+    "electron-local": {
+      "dependsOn": ["electron-package"],
+      "checks": [
+        "electron-installed-identity",
+        "electron-installed-launch-quit"
+      ],
+      "signing": "unsigned-local",
+      "destination": "electronInstallPath"
+    },
+    "chrome-local": {
+      "dependsOn": [],
+      "checks": [
+        "common-verify",
+        "ui-behavior",
+        "chrome-production-inventory",
+        "chrome-populated-history",
+        "chrome-loaded-identity",
+        "chrome-popup"
+      ],
+      "signing": "unpacked",
+      "destination": "chromeExtensionDir"
+    },
+    "android-package": {
+      "dependsOn": ["android-qualification"],
+      "checks": [
+        "common-verify",
+        "android-native-unit",
+        "android-native-matrix",
+        "android-package-inventory",
+        "android-signature"
+      ],
+      "signing": "upload",
+      "destination": "artifact"
+    },
+    "android-local": {
+      "dependsOn": ["android-qualification", "android-package"],
+      "checks": [
+        "android-device-compatibility",
+        "android-installed-identity",
+        "android-readiness"
+      ],
+      "signing": "debug-or-upload",
+      "destination": "androidDeviceSerial"
+    },
+    "android-internal": {
+      "dependsOn": ["android-qualification", "android-package"],
+      "checks": ["android-play-upload", "android-play-release-readback"],
+      "signing": "upload",
+      "destination": "playApplicationId"
+    }
+  },
+  "supportedHost": { "platform": "darwin", "architectures": ["arm64"] },
+  "toolchain": {
+    "node": ">=22.22.1",
+    "npm": ">=10.0.0",
+    "electron": "43.4.0",
+    "electronBuilder": "26.18.0",
+    "electronAsar": "3.4.1",
+    "gradle": "wrapper"
+  }
+}

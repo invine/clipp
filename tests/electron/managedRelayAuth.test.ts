@@ -126,6 +126,40 @@ async function callback(url: URL): Promise<number> {
 }
 
 describe("Electron managed relay authorization", () => {
+  it("logs cached access and refresh failure without exposing credentials or raw errors", async () => {
+    const debug = jest.spyOn(console, "debug").mockImplementation(() => {});
+    try {
+      const { auth, advance, failToken } = fixture();
+      await auth.acceptTokens(endpoint, {
+        access_token: "private-access",
+        refresh_token: "private-refresh",
+        token_type: "Bearer",
+        expires_in: 900,
+      });
+      expect(await auth.accessToken(endpoint)).toBe("private-access");
+      advance(900_000);
+      failToken(new Error("private account and token canary"));
+      expect(await auth.accessToken(endpoint)).toBeNull();
+      expect(debug.mock.calls).toEqual([
+        [
+          "relay.access_token",
+          { phase: "cached", expiresAt: 1_900_000, at: 1_000_000 },
+        ],
+        ["relay.access_token", { phase: "refresh_started", at: 1_900_000 }],
+        [
+          "relay.access_token",
+          {
+            phase: "refresh_failed",
+            reason: "token_exchange_failed",
+            at: 1_900_000,
+          },
+        ],
+      ]);
+    } finally {
+      debug.mockRestore();
+    }
+  });
+
   it("preserves native opaque credentials across storage and refresh", async () => {
     const { auth, data, posts, advance } = fixture();
     const access = "ory_at_case-sensitive.native";

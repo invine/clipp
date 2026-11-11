@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
+import { logRelayAccess } from "../../../packages/core/network/managedRelayDiagnostics.js";
 import { canonicalDiscoveryUrl } from "../../../packages/core/network/managedRelays.js";
 import { parseManagedRelayTokenResponse } from "../../../packages/core/network/managedRelayTokens.js";
 
@@ -223,11 +224,25 @@ export function createElectronManagedRelayAuth(options: Options) {
     url = canonicalDiscoveryUrl(url);
     await load(url);
     const credential = credentials.get(url);
-    if (credential?.access && credential.accessExpiresAt > now() + 30_000)
+    if (credential?.access && credential.accessExpiresAt > now() + 30_000) {
+      logRelayAccess(
+        { phase: "cached", expiresAt: credential.accessExpiresAt },
+        now()
+      );
       return credential.access;
+    }
     const existing = refreshFlights.get(url);
-    if (existing) return existing;
-    if (!credential) return null;
+    if (existing) {
+      logRelayAccess({ phase: "refresh_joined" }, now());
+      return existing;
+    }
+    if (!credential) {
+      logRelayAccess(
+        { phase: "credential_unavailable", state: "missing" },
+        now()
+      );
+      return null;
+    }
     const generation = credentialGeneration.get(url) ?? 0;
     const flight = (async () => {
       // A refresh is single-use. Remove the old generation before any ambiguous network outcome.
@@ -235,11 +250,16 @@ export function createElectronManagedRelayAuth(options: Options) {
       try {
         await trackWrite(url, options.storage.delete(key(url)));
       } catch {
+        logRelayAccess(
+          { phase: "credential_unavailable", state: "erase_failed" },
+          now()
+        );
         warnings.set(url, "Could not erase old credential; sign in again.");
         return null;
       }
       let responseReceived = false;
       try {
+        logRelayAccess({ phase: "refresh_started" }, now());
         const token = await requestTokens(
           tokenEndpoint(url),
           new URLSearchParams({
@@ -251,12 +271,13 @@ export function createElectronManagedRelayAuth(options: Options) {
         responseReceived = true;
         if ((credentialGeneration.get(url) ?? 0) !== generation) return null;
         await acceptTokens(url, token);
-        return (credentialGeneration.get(url) ?? 0) === generation
-          ? (credentials.get(url)?.access ?? null)
-          : null;
+        if ((credentialGeneration.get(url) ?? 0) !== generation) return null;
+        logRelayAccess({ phase: "refresh_succeeded" }, now());
+        return credentials.get(url)?.access ?? null;
       } catch (error) {
         if ((credentialGeneration.get(url) ?? 0) !== generation) return null;
         const reason = renewalFailureReason(error);
+        logRelayAccess({ phase: "refresh_failed", reason }, now());
         if (!responseReceived && reason === "dns_lookup_failed") {
           // DNS failed before the token POST could reach the relay. This
           // generation is still unused; retain it for the controller's backoff.

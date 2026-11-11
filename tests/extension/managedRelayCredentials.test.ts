@@ -18,6 +18,7 @@ function harness(
   workFence?: IdentityBoundWorkFence,
   digest?: (bytes: Uint8Array) => Promise<Uint8Array>
 ) {
+  const reportAccess = jest.fn();
   const events: string[] = [];
   const records = new Map<string, unknown>();
   const storage = {
@@ -63,11 +64,37 @@ function harness(
     workFence,
     now: () => 1000,
     digest,
+    onAccessDiagnostic: reportAccess,
   });
-  return { service, events, records, identity, fetchToken, storage };
+  return {
+    service,
+    events,
+    records,
+    identity,
+    fetchToken,
+    storage,
+    reportAccess,
+  };
 }
 
 describe("Chrome managed relay credentials", () => {
+  it("reports cache reuse and refresh failure without logging token material", async () => {
+    const { service, fetchToken, reportAccess } = harness();
+    await service.interactiveLogin(endpoint);
+    expect(await service.accessToken(endpoint)).toBe("access-1");
+    fetchToken.mockRejectedValueOnce(
+      new Error("private response with token canary")
+    );
+    expect(
+      await service.accessToken(endpoint, { forceRefresh: true })
+    ).toBeNull();
+    expect(reportAccess.mock.calls.map(([event]) => event)).toEqual([
+      { phase: "cached", expiresAt: 901_000 },
+      { phase: "refresh_started" },
+      { phase: "refresh_failed", reason: "unexpected_failure" },
+    ]);
+  });
+
   it("restricts local storage before credential reads and keeps first adoption empty", async () => {
     const { service, events } = harness();
     expect(await service.accessToken(endpoint)).toBeNull();

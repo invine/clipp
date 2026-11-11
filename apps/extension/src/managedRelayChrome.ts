@@ -1,3 +1,4 @@
+import { logRelayAccess } from "../../../packages/core/network/managedRelayDiagnostics";
 import type { IdentityBoundWorkFence } from "../../../packages/core/runtime/identityInitialization";
 import { ChromeStorageBackend } from "./chromeStorage";
 import { createExtensionManagedRelayCredentials } from "./managedRelayCredentials";
@@ -32,5 +33,6 @@ export function createChromeManagedRelayCredentials(
     identity,
     registeredExtensionId,
     fetchToken: postManagedRelayToken,
+    onAccessDiagnostic: logRelayAccess,
   });
 }
