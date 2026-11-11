@@ -319,6 +319,10 @@ test("Electron local retains the old bundle and confirms the installed candidate
     f.run.targets["electron-local"].installed.profile
   );
   assert.equal(
+    path.dirname(f.run.targets["electron-local"].installed.profile),
+    realpathSync(tmpdir())
+  );
+  assert.equal(
     f.run.targets["electron-local"].installed.executable,
     commands[1].args[1]
   );

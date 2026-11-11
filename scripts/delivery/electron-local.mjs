@@ -13,6 +13,7 @@ import {
   rmSync,
 } from "node:fs";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import { acquireOwnership } from "./ownership.mjs";
 import {
   electronAppIdentity,
@@ -298,7 +299,7 @@ export async function installElectronLocal({
   const checkout = canonicalPath(run.checkout);
   const output = canonicalPath(runRoot);
   const repository = canonicalPath(plan.repository.root);
-  const profileRoot = canonicalPath("/private/tmp");
+  const profileRoot = canonicalPath(tmpdir());
   if (
     destination === checkout ||
     destination.startsWith(`${checkout}${path.sep}`) ||
@@ -478,7 +479,7 @@ export async function installElectronLocal({
       "electron-installed-native-webrtc"
     );
     const profile = realpathSync(
-      mkdtempSync("/private/tmp/clipp-installed-quit-")
+      mkdtempSync(path.join(profileRoot, "clipp-installed-quit-"))
     );
     if (
       profile === repository ||
