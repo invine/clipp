@@ -270,7 +270,7 @@ try {
   await waitFor(
     () =>
       [...pages.values()].some(
-        (p) => p.session.getSnapshot().destination === "requests"
+        (p) => p.session.getSnapshot().destination === "devices"
       ),
     "actual callback never reached the canonical Requests consumer"
   );

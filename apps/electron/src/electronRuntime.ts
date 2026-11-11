@@ -653,6 +653,7 @@ async function composeElectronRuntime(
     deviceId: string;
     deviceName: string;
     requestVersion: string;
+    issuedAtUnixMs?: string;
   }> = [];
   let pairingPending:
     ReturnType<typeof createPendingTrustRequestCoordinator> | undefined;
@@ -1344,6 +1345,7 @@ async function composeElectronRuntime(
         deviceId: request.initiatorPeerId,
         deviceName: request.deviceName,
         requestVersion: request.requestVersion,
+        issuedAtUnixMs: request.issuedAtUnixMs,
       }));
       await emitState();
     },

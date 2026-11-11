@@ -38,13 +38,13 @@ const props: ClipboardAppProps = {
 };
 it("Requests presents a pending read without inventing an empty current list", () => {
   const session = createUiSession();
-  session.update({ destination: "requests" });
+  session.update({ destination: "devices" });
   const input = { ...props, session, requestsLoading: true };
   const output = renderToStaticMarkup(React.createElement(ClipboardApp, input));
   expect(output).toContain("Loading Requests…");
-  expect(output).toContain('<h1 class="workspace-current-title">Requests</h1>');
+  expect(output).toContain('<h1 class="workspace-current-title">Devices</h1>');
   expect(output).toContain('<h2 class="device-section-title"');
-  expect(output).toContain("Pending requests</h2>");
+  expect(output).not.toContain("Pending requests</h2>");
   expect(output).not.toContain('aria-label="Search history"');
   expect(output).not.toContain("No pending requests.");
 });
@@ -55,8 +55,12 @@ it("an active History query has a named clear route", () => {
     React.createElement(ClipboardApp, { ...props, session })
   );
   expect(output).toContain('aria-label="Clear search"');
-  expect(output).not.toContain('<h1 class="workspace-current-title">Pinned</h1>');
-  expect(output).not.toContain('<h1 class="workspace-current-title">History</h1>');
+  expect(output).not.toContain(
+    '<h1 class="workspace-current-title">Pinned</h1>'
+  );
+  expect(output).not.toContain(
+    '<h1 class="workspace-current-title">History</h1>'
+  );
 });
 it("keeps History controls off task destinations while retaining a screen heading", () => {
   const session = createUiSession();
@@ -339,10 +343,8 @@ it("notification Requests rendering offers a return route while the originating 
     React.createElement(ClipboardApp, { ...props, session })
   );
   expect(output).toContain("Back to previous task");
-  expect(output).toContain(
-    "This Request is no longer available. Open Requests."
-  );
-  expect(output).toContain("Pending requests");
+  expect(output).toContain("This Request is no longer available.");
+  expect(output).toContain('<h1 class="workspace-current-title">Devices</h1>');
   expect(session.pairing.getSnapshot().raw).toBe("retained input");
 });
 
@@ -391,7 +393,9 @@ it("a distinct notification removes the rendered Issues modal from Requests and 
     authority,
     "notification"
   );
-  expect(render()).toContain("Pending requests");
+  expect(render()).toContain(
+    '<h1 class="workspace-current-title">Devices</h1>'
+  );
   expect(render()).not.toContain('aria-modal="true"');
   expect(render()).toContain("Back to previous task");
   session.back();
@@ -669,6 +673,41 @@ it("Links shows URL Clips from authoritative History state", () => {
   expect(output).toContain("https://example.test/article");
   expect(output).not.toContain("A text Clip");
   expect(output).toMatch(
-    /aria-current="page"[^>]*>\s*<svg[^>]*>[\s\S]*?<\/svg><span>Links<\/span>/
+    /aria-current="page"[^>]*>\s*<svg[^>]*>[\s\S]*?<\/svg><span>History<\/span>/
+  );
+});
+
+it("shows only incoming pending requests on Devices in the drawer", () => {
+  const navigation = (
+    pending: ClipboardAppProps["pending"],
+    waiting: NonNullable<ClipboardAppProps["waiting"]> = []
+  ) => {
+    const output = renderToStaticMarkup(
+      React.createElement(ClipboardApp, { ...props, pending, waiting })
+    );
+    return (
+      output.match(
+        /<nav[^>]*aria-label="Clipp destinations"[\s\S]*?<\/nav>/
+      )?.[0] ?? ""
+    );
+  };
+  const pending = [
+    { deviceId: "peer-one", deviceName: "One", requestVersion: "v1" },
+    { deviceId: "peer-two", deviceName: "Two", requestVersion: "v2" },
+  ];
+  const empty = navigation(
+    [],
+    [{ targetPeerId: "outgoing", expiresAtUnixMs: 1000 }]
+  );
+  expect(empty).toContain("<span>Devices</span>");
+  expect(empty).not.toContain(" (1)");
+  expect(empty).not.toContain("<span>Requests</span>");
+  expect(empty).not.toContain("<span>Pinned</span>");
+  expect(empty).not.toContain("<span>Links</span>");
+  expect(navigation(pending)).toContain(
+    "<span>Devices</span><span> (2)</span>"
+  );
+  expect(navigation(pending.slice(0, 1))).toContain(
+    "<span>Devices</span><span> (1)</span>"
   );
 });

@@ -256,7 +256,7 @@ it("keeps independent suspended alias and relay failures visible when B becomes 
 it("the real Requests destination distinguishes response, current Membership and recovery without losing the Pairing draft", () => {
   const session = createUiSession();
   session.pairing.change("newer draft");
-  session.update({ destination: "requests" });
+  session.update({ destination: "devices" });
   const html = render({
     session,
     identity: { deviceId: "local", deviceName: "Desktop" },

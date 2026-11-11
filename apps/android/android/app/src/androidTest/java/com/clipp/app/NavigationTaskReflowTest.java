@@ -202,8 +202,8 @@ public final class NavigationTaskReflowTest {
         replaceText(QUERY, retainedQuery);
         hideIme();
         awaitOnlySelectedClip();
-        openDestination("requests");
-        awaitUi("genuine current empty Requests, not loading or unavailable", "[...document.querySelectorAll('.destination-pane p')].some(e => e.textContent === 'No pending requests.')"
+        openDestination("devices");
+        awaitUi("genuine current empty Trust requests, not loading or unavailable", "!document.querySelector('.device-trust-requests')"
             + " && ![...document.querySelectorAll('.destination-pane [role=status]')].some(e => e.textContent.includes('Loading Requests'))"
             + " && ![...document.querySelectorAll('.destination-pane [role=alert]')].some(e => e.textContent.includes('Requests are unavailable'))");
         openDestination("history");
@@ -255,15 +255,15 @@ public final class NavigationTaskReflowTest {
             .put("notificationAvailabilityObserved", androidx.core.app.NotificationManagerCompat.from(target).areNotificationsEnabled());
         String textarea = "document.querySelector('textarea[aria-label=\"Pairing text\"]')";
         String dialogTitle = "(() => { const d=document.querySelector('[role=dialog][aria-modal=true]'); return d ? document.getElementById(d.getAttribute('aria-labelledby'))?.textContent : null; })()";
-        String badge = "document.querySelector('nav[aria-label=\"Clipp destinations\"] [data-session-focus=\"destination:requests\"] [aria-label=\"active requests\"]')";
+        String badge = "document.querySelector('nav[aria-label=\"Clipp destinations\"] [data-session-focus=\"destination:devices\"] span:last-child')";
         openDestination("devices");
         tap(web.button("Pair this device"));
         tap(web.button("Paste pairing text"));
         replaceText(textarea, signedTarget);
         tap(web.button("Submit pairing text"));
         awaitUi("actual outgoing signed request submitted", "[...document.querySelectorAll('[role=status]')].some(e => e.textContent === 'Request submitted. Waiting for approval.')");
-        awaitUi("actual outgoing request contributes a public badge", "!!(" + badge + ") && /^\\s*\\([1-9][0-9]*\\)\\s*$/.test((" + badge + ").textContent)");
-        int beforeIncoming = Integer.parseInt(web.evaluate("(" + badge + ").textContent.replace(/[^0-9]/g,'')"));
+        awaitUi("outgoing request does not add an incoming badge", "!!(" + badge + ") && (" + badge + ").textContent.trim() === 'Devices'");
+        int beforeIncoming = 0;
         String raw = "  retained manual draft " + nonce + "  ";
         replaceText(textarea, raw);
         assertSameDocument();
@@ -284,10 +284,10 @@ public final class NavigationTaskReflowTest {
         awaitUi("public Close dismisses without Discard", "!document.querySelector('[role=dialog][aria-modal=true]')");
         openDestination("history");
         awaitUi("Requests discovery badge is visible outside Devices", "!!(" + badge + ") && (" + badge + ").getClientRects().length > 0 && Number((" + badge + ").textContent.replace(/[^0-9]/g,'')) > " + beforeIncoming);
-        openDestination("requests");
-        String card = "[...document.querySelectorAll('.pending-card')].filter(e => e.querySelector('.peer-sub')?.getAttribute('title') === " + JSONObject.quote(peerId) + ")";
-        awaitUi("one current exact genuine incoming Peer ID", card + ".length === 1 && " + card + "[0].querySelector('.peer-name')?.getAttribute('title') === " + JSONObject.quote(peerName));
-        awaitUi("current incoming request has enabled Accept without admitting it", "[..." + card + "[0].querySelectorAll('button')].filter(e => e.textContent.trim() === 'Accept' && !e.disabled).length === 1");
+        openDestination("devices");
+        String card = "[...document.querySelectorAll('.device-request-row')].filter(e => e.querySelector('dd')?.textContent === " + JSONObject.quote(peerId) + ")";
+        awaitUi("one current exact genuine incoming Peer ID", card + ".length === 1 && " + card + "[0].querySelector('.device-request-name')?.textContent === " + JSONObject.quote(peerName));
+        awaitUi("current incoming request has enabled Approve without admitting it", "[..." + card + "[0].querySelectorAll('button')].filter(e => e.textContent.trim() === 'Approve' && !e.disabled).length === 1");
         assertSameDocument();
         observe("n6-manual-current-peer-enabled-accept");
         // Manual Requests has no notification-return context. Reopen via ordinary Devices controls.
@@ -307,8 +307,8 @@ public final class NavigationTaskReflowTest {
         assertSameDocument();
         observe("n6-public-reopen-normal-task-back-retained-raw-focus");
         manualPending.put("rawDraftLength", raw.length()).put("rawDraftSha256", sha(raw.getBytes(StandardCharsets.UTF_8)))
-            .put("publicCloseWithoutDiscard", true).put("requestsOutsideDevices", true)
-            .put("currentExactPeerEnabledAccept", true).put("acceptInvoked", false)
+            .put("publicCloseWithoutDiscard", true).put("requestsOnDevices", true)
+            .put("currentExactPeerEnabledApprove", true).put("acceptInvoked", false)
             .put("publicReopenRawAndFocus", true).put("normalTaskBack", true)
             .put("sameActivityWebViewDocument", true).put("automaticRequestsRootBackClaimed", false);
         checkDeadline();

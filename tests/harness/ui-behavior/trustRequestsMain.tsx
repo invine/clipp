@@ -73,7 +73,9 @@ function makeAdapter(
 }
 
 const session = createUiSession();
-session.update({ destination: "requests" });
+session.update({
+  destination: "devices",
+});
 
 function ScenarioControls({
   adapter,
@@ -167,6 +169,68 @@ function ScenarioControls({
         }
       >
         Rotate identity
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          adapter.publish({
+            pending: [
+              initialRequest,
+              {
+                deviceId: "peer-two",
+                deviceName: "Peer Two",
+                requestVersion: "request-two",
+              },
+            ],
+          })
+        }
+      >
+        Publish two pending requests
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          adapter.publish({
+            pending: [
+              initialRequest,
+              {
+                deviceId: "peer-two",
+                deviceName: "Peer One",
+                requestVersion: "request-two",
+              },
+            ],
+          })
+        }
+      >
+        Publish same-named requests
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          adapter.publish({
+            pending: [{ ...initialRequest, issuedAtUnixMs: "1704067200000" }],
+          })
+        }
+      >
+        Publish dated request
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          adapter.publish({
+            pending: [
+              { ...initialRequest, issuedAtUnixMs: "18446744073709551615" },
+            ],
+          })
+        }
+      >
+        Publish unrepresentable request time
+      </button>
+      <button
+        type="button"
+        onClick={() => adapter.publish({ pending: [initialRequest] })}
+      >
+        Publish first pending request
       </button>
       <button type="button" onClick={() => adapter.publish({ pending: [] })}>
         Publish no pending requests

@@ -124,7 +124,7 @@ test("a notification suspends and restores the correct relay editor draft", asyn
   await page
     .getByRole("button", { name: "Open Requests notification" })
     .click();
-  await expect(page.getByRole("heading", { name: "Requests" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Devices" })).toBeVisible();
   await page
     .getByRole("button", { name: "Resolve pending effect: rejected" })
     .click();

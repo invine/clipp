@@ -154,3 +154,24 @@ describe("Android runtime UI owner", () => {
     await owner.stop();
   });
 });
+
+it("forwards a Trust Request's sent time through the Android UI owner", async () => {
+  const observed: Array<{ pending: Array<{ issuedAtUnixMs: string }> }> = [];
+  const client = {
+    getState: jest.fn(async () => ({
+      pending: [{ issuedAtUnixMs: "1704067200000" }],
+      pairingState: { sessionId: "owner-a", revision: 1 },
+    })),
+    getInitializationError: jest.fn(async () => null),
+    getRuntimeAuthority: jest.fn(async () => "owner-a"),
+    onUpdate: jest.fn(() => jest.fn()),
+  };
+  const owner = createAndroidRuntimeUiOwner(
+    { start: async () => {}, stop: async () => {} },
+    client,
+    (state) => observed.push(state)
+  );
+  await owner.start();
+  expect(observed[0].pending[0].issuedAtUnixMs).toBe("1704067200000");
+  await owner.stop();
+});

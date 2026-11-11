@@ -106,7 +106,7 @@ await build({
   stdin: {
     resolveDir: repo,
     loader: "tsx",
-    contents: `import React,{useState}from'react';import{createRoot}from'react-dom/client';import{ClipboardApp}from'${repo}/packages/ui/src/ClipboardApp';import{createUiSession}from'${repo}/packages/ui/src/uiSession';import{createSettingsHandler}from'${repo}/packages/core/runtime/settingsAuthority';import{useRuntimeSettings}from'${repo}/packages/ui/src/useRuntimeSettings';import'${repo}/packages/ui/src/styles.css';import'${repo}/packages/ui/src/host.css';import'${repo}/${hostFile}';import{bindHostGeometry}from'${repo}/packages/ui/src/hostGeometry';let geometryListener;window.startFixtureGeometry=snapshot=>{window.stopFixtureGeometry=bindHostGeometry({getSnapshot:async()=>snapshot,addListener:async listener=>{geometryListener=listener;return{remove:()=>{geometryListener=null}}}},window,document)};window.publishFixtureGeometry=snapshot=>geometryListener?.(snapshot);window.fixtureSession=createUiSession();window.fixtureActions=[];const values=new Map(),listeners=new Set();let retentionValue=30*86400000;const retentionState=()=>({value:retentionValue,persistenceError:null,cleanupError:null});const settingsOwner=createSettingsHandler({sessionId:'synthetic-navigation-settings',retention:{read:async()=>retentionState(),set:async value=>{if(window.rejectSetting==='localRetentionMs')return {...retentionState(),status:'rejected',error:'controlled-policy-failure'};retentionValue=value;return {...retentionState(),status:'applied'}}},storage:{get:async key=>{if(window.settingsReadFault)throw Error('controlled-settings-read-failure');return values.get(key)},set:async(key,value)=>{if(key===window.rejectSetting)throw Error('controlled-policy-failure');if(key==='autoSync'&&window.rejectAutoSync)throw Error('controlled-auto-sync-rejection');values.set(key,value);if(key==='autoSync'&&window.failAutoSyncReadback)window.settingsReadFault=true}},applyAutoSync:()=>{},applyLogLevel:()=>{},publish:async snapshot=>listeners.forEach(listener=>listener({type:'settingsState',snapshot}))});const settingsPort={send:async message=>message.type==='getSettings'?{ok:true,snapshot:await settingsOwner.read()}:settingsOwner.write(message.settings),subscribe:listener=>{listeners.add(listener);return()=>listeners.delete(listener)}};function App(){const settings=useRuntimeSettings(settingsPort);const [state,setState]=useState({pending:[{deviceId:'request-1',deviceName:'Incoming device'}],identity:{deviceId:'local',deviceName:'This installation'},devices:[{deviceId:'remote',deviceName:'Remote device',displayName:'My alias'}],peers:[],connectionStateKnown:false,clips:[],pinnedIds:[]});window.publishFixture=patch=>setState(old=>({...old,...patch}));return <div ${hostSizing} className="${hostClass}"><ClipboardApp {...state} session={window.fixtureSession} appearanceSettings={settings} autoSync={settings.snapshot?.state.autoSync} autoSyncKnown={settings.snapshot!==null} autoSyncLoading={settings.loading} peers={state.peers??[]} connectionStateKnown={state.connectionStateKnown??false} pinnedIds={state.pinnedIds} onDeleteClip={async id=>{window.fixtureActions.push({action:'delete',id});if(window.failDelete)throw Error('controlled-delete-failure');setState(old=>({...old,clips:old.clips.filter(clip=>clip.id!==id)}))}} onUnpair={()=>{}} onAccept={async request=>{window.fixtureActions.push({action:'accept',request});setState(old=>({...old,pending:[]}));return {ok:false,error:'cleanup_failed',admitted:true}}} onReject={async request=>{window.fixtureActions.push({action:'reject',request});setState(old=>({...old,pending:[]}));return {ok:true,admitted:false}}} onPairText={async()=>({ok:false,error:'invalid_input'})} onRequestPairingCode={async()=>({text:'synthetic-qr-text',image:'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><rect width="320" height="320" fill="white"/></svg>'})} onCopyPairingText={async()=>({status:'copied'})} onRenameIdentity={async raw=>{if(window.deferName)return new Promise(resolve=>{window.resolveName=()=>{setState(old=>({...old,identity:{...old.identity,deviceName:raw.trim()}}));resolve({deviceId:'local',deviceName:raw.trim()})}});throw Error('controlled-name-failure')}} onRenameDevice={async()=>{throw Error('controlled-alias-failure')}} onReuseClip={async id=>{window.fixtureActions.push({action:'copy',id});return window.copyOutcome??'complete'}} onShareNow={async()=>{window.fixtureActions.push({action:'send'});if(window.sendFailure)throw Object.assign(Error('controlled-send-failure'),{code:window.sendFailure})}} onSetPinned={async(id,pinned)=>{window.fixtureActions.push({action:'pin',id,pinned});setState(old=>({...old,pinnedIds:pinned?[...old.pinnedIds,id]:old.pinnedIds.filter(value=>value!==id),clips:!pinned&&window.removeOnUnpin?old.clips.filter(clip=>clip.id!==id):old.clips}))}} onClearAll={async()=>{if(window.deferClear)await new Promise(resolve=>{window.completeClear=resolve})}} onSetAutoSync={async enabled=>{window.fixtureActions.push({action:'auto-sync-save',enabled});const result=await settingsOwner.write({autoSync:enabled});return {status:result.status,autoSync:result.snapshot.state.autoSync,error:result.error}}} onRetryRequests={async()=>{setState(old=>({...old,requestsUnavailable:false}));return true}} onRetryAutoSync={async()=>{window.fixtureActions.push({action:'auto-sync-refresh'});let confirmed=false;try{const response=await settingsPort.send({type:'getSettings'});confirmed=response.ok===true;if(confirmed)listeners.forEach(listener=>listener({type:'settingsState',snapshot:response.snapshot}))}catch{}setState(old=>({...old,autoSyncRefreshError:confirmed?null:'controlled-settings-read-failure'}));return confirmed}} onRefreshManagedRelays={async()=>[]} onMutateManagedRelay={async()=>({status:'rejected',configurations:[],configurationApplied:false,credentialsRemoved:[],error:'controlled-relay-failure'})}/></div>}createRoot(document.getElementById('root')).render(<App/>);`,
+    contents: `import React,{useState}from'react';import{createRoot}from'react-dom/client';import{ClipboardApp}from'${repo}/packages/ui/src/ClipboardApp';import{createUiSession}from'${repo}/packages/ui/src/uiSession';import{createSettingsHandler}from'${repo}/packages/core/runtime/settingsAuthority';import{useRuntimeSettings}from'${repo}/packages/ui/src/useRuntimeSettings';import'${repo}/packages/ui/src/styles.css';import'${repo}/packages/ui/src/host.css';import'${repo}/${hostFile}';import{bindHostGeometry}from'${repo}/packages/ui/src/hostGeometry';let geometryListener;window.startFixtureGeometry=snapshot=>{window.stopFixtureGeometry=bindHostGeometry({getSnapshot:async()=>snapshot,addListener:async listener=>{geometryListener=listener;return{remove:()=>{geometryListener=null}}}},window,document)};window.publishFixtureGeometry=snapshot=>geometryListener?.(snapshot);window.fixtureSession=createUiSession();window.fixtureActions=[];const values=new Map(),listeners=new Set();let retentionValue=30*86400000;const retentionState=()=>({value:retentionValue,persistenceError:null,cleanupError:null});const settingsOwner=createSettingsHandler({sessionId:'synthetic-navigation-settings',retention:{read:async()=>retentionState(),set:async value=>{if(window.rejectSetting==='localRetentionMs')return {...retentionState(),status:'rejected',error:'controlled-policy-failure'};retentionValue=value;return {...retentionState(),status:'applied'}}},storage:{get:async key=>{if(window.settingsReadFault)throw Error('controlled-settings-read-failure');return values.get(key)},set:async(key,value)=>{if(key===window.rejectSetting)throw Error('controlled-policy-failure');if(key==='autoSync'&&window.rejectAutoSync)throw Error('controlled-auto-sync-rejection');values.set(key,value);if(key==='autoSync'&&window.failAutoSyncReadback)window.settingsReadFault=true}},applyAutoSync:()=>{},applyLogLevel:()=>{},publish:async snapshot=>listeners.forEach(listener=>listener({type:'settingsState',snapshot}))});const settingsPort={send:async message=>message.type==='getSettings'?{ok:true,snapshot:await settingsOwner.read()}:settingsOwner.write(message.settings),subscribe:listener=>{listeners.add(listener);return()=>listeners.delete(listener)}};function App(){const settings=useRuntimeSettings(settingsPort);const [state,setState]=useState({pending:[{deviceId:'request-1',deviceName:'Incoming device',requestVersion:'request-v1'}],identity:{deviceId:'local',deviceName:'This installation'},devices:[{deviceId:'remote',deviceName:'Remote device',displayName:'My alias'}],peers:[],connectionStateKnown:false,clips:[],pinnedIds:[]});window.publishFixture=patch=>setState(old=>({...old,...patch}));return <div ${hostSizing} className="${hostClass}"><ClipboardApp {...state} session={window.fixtureSession} appearanceSettings={settings} autoSync={settings.snapshot?.state.autoSync} autoSyncKnown={settings.snapshot!==null} autoSyncLoading={settings.loading} peers={state.peers??[]} connectionStateKnown={state.connectionStateKnown??false} pinnedIds={state.pinnedIds} onDeleteClip={async id=>{window.fixtureActions.push({action:'delete',id});if(window.failDelete)throw Error('controlled-delete-failure');setState(old=>({...old,clips:old.clips.filter(clip=>clip.id!==id)}))}} onUnpair={()=>{}} onAccept={async request=>{window.fixtureActions.push({action:'accept',request});setState(old=>({...old,pending:[]}));return {ok:false,error:'cleanup_failed',admitted:true}}} onReject={async request=>{window.fixtureActions.push({action:'reject',request});setState(old=>({...old,pending:[]}));return {ok:true,admitted:false}}} onPairText={async()=>({ok:false,error:'invalid_input'})} onRequestPairingCode={async()=>({text:'synthetic-qr-text',image:'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><rect width="320" height="320" fill="white"/></svg>'})} onCopyPairingText={async()=>({status:'copied'})} onRenameIdentity={async raw=>{if(window.deferName)return new Promise(resolve=>{window.resolveName=()=>{setState(old=>({...old,identity:{...old.identity,deviceName:raw.trim()}}));resolve({deviceId:'local',deviceName:raw.trim()})}});throw Error('controlled-name-failure')}} onRenameDevice={async()=>{throw Error('controlled-alias-failure')}} onReuseClip={async id=>{window.fixtureActions.push({action:'copy',id});return window.copyOutcome??'complete'}} onShareNow={async()=>{window.fixtureActions.push({action:'send'});if(window.sendFailure)throw Object.assign(Error('controlled-send-failure'),{code:window.sendFailure})}} onSetPinned={async(id,pinned)=>{window.fixtureActions.push({action:'pin',id,pinned});setState(old=>({...old,pinnedIds:pinned?[...old.pinnedIds,id]:old.pinnedIds.filter(value=>value!==id),clips:!pinned&&window.removeOnUnpin?old.clips.filter(clip=>clip.id!==id):old.clips}))}} onClearAll={async()=>{if(window.deferClear)await new Promise(resolve=>{window.completeClear=resolve})}} onSetAutoSync={async enabled=>{window.fixtureActions.push({action:'auto-sync-save',enabled});const result=await settingsOwner.write({autoSync:enabled});return {status:result.status,autoSync:result.snapshot.state.autoSync,error:result.error}}} onRetryRequests={async()=>{setState(old=>({...old,requestsUnavailable:false}));return true}} onRetryAutoSync={async()=>{window.fixtureActions.push({action:'auto-sync-refresh'});let confirmed=false;try{const response=await settingsPort.send({type:'getSettings'});confirmed=response.ok===true;if(confirmed)listeners.forEach(listener=>listener({type:'settingsState',snapshot:response.snapshot}))}catch{}setState(old=>({...old,autoSyncRefreshError:confirmed?null:'controlled-settings-read-failure'}));return confirmed}} onRefreshManagedRelays={async()=>[]} onMutateManagedRelay={async()=>({status:'rejected',configurations:[],configurationApplied:false,credentialsRemoved:[],error:'controlled-relay-failure'})}/></div>}createRoot(document.getElementById('root')).render(<App/>);`,
   },
   bundle: true,
   platform: "browser",
@@ -246,7 +246,12 @@ try {
         return navigation.getBoundingClientRect().left >= 0;
       });
     }
-    await nav.getByRole("button", { name, exact: true }).click();
+    await nav
+      .getByRole("button", {
+        name: name === "Devices" ? /^Devices(?: \(\d+\))?$/ : name,
+        exact: name !== "Devices",
+      })
+      .click();
   };
   const openIssues = async () => {
     const notice = page.locator(".issue-notice");
@@ -263,7 +268,7 @@ try {
     await checkNavigationTargetStability({ page, nav, report, host });
   } else if (!process.argv.includes("--skip-initial")) {
     await openCompactNavigation();
-    for (const name of ["History", "Devices", "Requests", "Settings"])
+    for (const name of ["History", "Devices", "Relays", "Settings"])
       assert.equal(
         await nav
           .getByRole("button", { name: new RegExp("^" + name) })
@@ -275,7 +280,7 @@ try {
       await page.getByLabel("Search history", { exact: true }).isVisible(),
       true
     );
-    await nav.getByRole("button", { name: "Devices", exact: true }).click();
+    await nav.getByRole("button", { name: /^Devices(?: \(\d+\))?$/ }).click();
     await page.keyboard.press("Control+k");
     await page.getByLabel("Search history", { exact: true }).waitFor();
     assert.equal(
@@ -388,17 +393,19 @@ try {
         document.activeElement?.getAttribute("aria-label") === "Search history"
     );
     await openCompactNavigation();
-    await nav.getByRole("button", { name: /^Requests/ }).click();
-    await page.getByRole("button", { name: "Accept", exact: true }).click();
+    await nav.getByRole("button", { name: /^Devices/ }).click();
+    await page
+      .getByRole("button", { name: /Approve request from Incoming device/ })
+      .click();
     await page.waitForFunction(() =>
       window.fixtureActions.some((value) => value.action === "accept")
     );
     assert.equal(
-      await page.getByText("No pending requests.", { exact: true }).isVisible(),
-      true
+      await page.getByRole("region", { name: "Trust requests" }).count(),
+      0
     );
     report.cases.push({
-      label: `${host} initial Requests navigation and actual approval callback`,
+      label: `${host} Devices navigation and actual approval callback`,
       passed: true,
     });
   }
@@ -498,14 +505,7 @@ try {
       true,
       "compact navigation opens on request"
     );
-    await nav.getByRole("button", { name: "Links", exact: true }).click();
-    await page
-      .getByText("https://example.test/article", { exact: false })
-      .waitFor();
-    assert.equal(
-      await page.getByText("A clipboard note", { exact: false }).count(),
-      0
-    );
+    await nav.getByRole("button", { name: "History", exact: true }).click();
     assert.equal(
       await page
         .getByRole("button", { name: "Open navigation", exact: true })
@@ -520,9 +520,22 @@ try {
       "Open navigation",
       "focus returns to the compact navigation control"
     );
+    const filters = page.getByRole("button", { name: "Filters", exact: true });
+    if ((await filters.getAttribute("aria-expanded")) === "false")
+      await filters.click();
+    await page
+      .getByRole("group", { name: "History filters" })
+      .getByRole("button", { name: "Links", exact: true })
+      .click();
+    await page
+      .getByText("https://example.test/article", { exact: false })
+      .waitFor();
+    assert.equal(
+      await page.getByText("A clipboard note", { exact: false }).count(),
+      0
+    );
     report.cases.push({
-      label:
-        "compact navigation opens, selects real Links history and restores focus",
+      label: "compact navigation opens, selects History, and restores focus",
       passed: true,
     });
   }
@@ -543,7 +556,7 @@ try {
     await chooseDestination("History");
     const query = page.getByLabel("Search history", { exact: true });
     await query.fill("  recovery query  ");
-    await nav.getByRole("button", { name: "Devices", exact: true }).click();
+    await nav.getByRole("button", { name: /^Devices(?: \(\d+\))?$/ }).click();
     await page
       .getByRole("button", { name: "Rename this device", exact: true })
       .click();
@@ -616,7 +629,7 @@ try {
           { exact: false }
         )
         .waitFor();
-      await nav.getByRole("button", { name: "Requests", exact: true }).click();
+      await nav.getByRole("button", { name: /^Devices/ }).click();
       await openIssues();
       await issues
         .getByRole("button", { name: "Open Auto Sync", exact: true })
@@ -651,7 +664,7 @@ try {
         outcome === "rejected" ? "true" : "false",
         "the current read, not the failed feedback, supplies the applied value"
       );
-      await nav.getByRole("button", { name: "Devices", exact: true }).click();
+      await nav.getByRole("button", { name: /^Devices(?: \(\d+\))?$/ }).click();
       await page
         .getByRole("button", { name: "Rename this device", exact: true })
         .click();
@@ -685,7 +698,7 @@ try {
     );
     await chooseDestination("History");
     await query.fill("");
-    await nav.getByRole("button", { name: "Devices", exact: true }).click();
+    await nav.getByRole("button", { name: /^Devices(?: \(\d+\))?$/ }).click();
     await page
       .getByRole("button", { name: "Rename this device", exact: true })
       .click();
@@ -694,7 +707,8 @@ try {
       .click();
   }
   if (process.argv.includes("--requests-state")) {
-    await nav.getByRole("button", { name: /^Requests/ }).click();
+    await openCompactNavigation();
+    await nav.getByRole("button", { name: /^Devices/ }).click();
     await page.evaluate(() => window.publishFixture({ requestsLoading: true }));
     await page
       .getByText("Loading Requests…", { exact: true })
@@ -718,7 +732,12 @@ try {
     await page
       .getByRole("button", { name: "Retry Requests", exact: true })
       .click();
-    await page.getByText("No pending requests.", { exact: true }).waitFor();
+    await page
+      .getByText(
+        "Requests are unavailable. Retry to refresh the current list.",
+        { exact: true }
+      )
+      .waitFor({ state: "hidden" });
     report.cases.push({
       label:
         "Requests live availability and Retry do not invent an empty loaded list",
@@ -726,7 +745,7 @@ try {
     });
   }
   if (process.argv.includes("--name-task")) {
-    await nav.getByRole("button", { name: "Devices", exact: true }).click();
+    await nav.getByRole("button", { name: /^Devices(?: \(\d+\))?$/ }).click();
     await page
       .getByRole("button", { name: "Rename this device", exact: true })
       .click();
@@ -786,7 +805,7 @@ try {
     });
   }
   if (process.argv.includes("--pairing-task")) {
-    await nav.getByRole("button", { name: "Devices", exact: true }).click();
+    await nav.getByRole("button", { name: /^Devices(?: \(\d+\))?$/ }).click();
     await page
       .getByRole("button", { name: "Pair this device", exact: true })
       .click();
@@ -1103,7 +1122,7 @@ try {
     await page
       .getByRole("button", { name: "Clear search", exact: true })
       .click();
-    await nav.getByRole("button", { name: "Devices", exact: true }).click();
+    await nav.getByRole("button", { name: /^Devices(?: \(\d+\))?$/ }).click();
     await page.getByRole("button", { name: "Filters", exact: true }).click();
     await page
       .getByRole("group", { name: "History filters" })
@@ -1306,7 +1325,7 @@ try {
         .locator(".app-shell")
         .evaluate((element) => element.scrollWidth <= element.clientWidth + 1)
     );
-    await nav.getByRole("button", { name: "Devices", exact: true }).click();
+    await nav.getByRole("button", { name: /^Devices(?: \(\d+\))?$/ }).click();
     await page
       .getByRole("button", { name: "Rename this device", exact: true })
       .click();
@@ -1342,7 +1361,7 @@ try {
         (theme) => document.documentElement.dataset.clippTheme === theme,
         theme
       );
-      await nav.getByRole("button", { name: "Devices", exact: true }).click();
+      await nav.getByRole("button", { name: /^Devices(?: \(\d+\))?$/ }).click();
       await page
         .getByRole("button", { name: "Rename this device", exact: true })
         .click();
@@ -1468,7 +1487,7 @@ try {
     await page.waitForFunction(
       () => document.documentElement.dataset.hostGeometry === "android"
     );
-    await nav.getByRole("button", { name: "Devices", exact: true }).click();
+    await nav.getByRole("button", { name: /^Devices(?: \(\d+\))?$/ }).click();
     await page
       .getByRole("button", { name: "Rename this device", exact: true })
       .click();

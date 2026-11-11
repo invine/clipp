@@ -38,9 +38,7 @@ export async function checkNavigationTargetStability({
   await page.waitForFunction(
     () => document.documentElement.dataset.hostGeometry === "android"
   );
-  await nav
-    .getByRole("button", { name: "Requests (unavailable)", exact: true })
-    .waitFor();
+  await nav.getByRole("button", { name: "Devices", exact: true }).waitFor();
   const query = page.getByLabel("Search history", { exact: true });
   await query.fill("retained target query");
   const devices = nav.getByRole("button", { name: "Devices", exact: true });
@@ -80,7 +78,7 @@ export async function checkNavigationTargetStability({
   await page.evaluate(() =>
     window.publishFixture({ requestsUnavailable: false })
   );
-  await nav.getByRole("button", { name: "Requests", exact: true }).waitFor();
+  await nav.getByRole("button", { name: "Devices", exact: true }).waitFor();
   const after = await nav.evaluate((navigation, point) => {
     const hit = document.elementFromPoint(point.x, point.y)?.closest("button");
     return {

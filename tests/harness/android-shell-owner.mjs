@@ -278,7 +278,7 @@ try {
     async () => !!(await shellHost.publicState()).identity
   );
   await page.getByRole("button", { name: "Back to previous task" }).waitFor();
-  await page.getByRole("heading", { name: "Requests", exact: true }).waitFor();
+  await page.getByRole("heading", { name: "Devices", exact: true }).waitFor();
   await page.getByRole("button", { name: "Back to previous task" }).click();
   assert.equal(
     await page.getByRole("textbox", { name: "Search history" }).inputValue(),

@@ -238,6 +238,21 @@ function relayStatusFor(connection: RelayConnectionInfo | undefined) {
   };
 }
 
+function formatRequestSentTime(value: string | undefined): string {
+  if (!value || !/^(0|[1-9]\d*)$/.test(value)) return "Unavailable";
+  try {
+    const milliseconds = BigInt(value);
+    if (milliseconds > 8640000000000000n) return "Unavailable";
+    const date = new Date(Number(milliseconds));
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(date);
+  } catch {
+    return "Unavailable";
+  }
+}
+
 export type ClipboardAppProps = {
   /** Runtime composition lifetime. Replacing it retires obsolete UI work. */
   runtimeOwner?: object;
@@ -717,7 +732,7 @@ export function ClipboardApp({
     (
       focus ?? root.querySelector<HTMLElement>("[data-session-focus=workspace]")
     )?.focus({ preventScroll: true });
-    if (focus?.dataset.sessionFocus?.match(/^(copy|pin|more):/))
+    if (focus?.dataset.sessionFocus?.match(/^(copy|pin|more|request):/))
       focus.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [
     session,
@@ -1460,6 +1475,52 @@ export function ClipboardApp({
     session.open({ kind: "peer-id", entity: deviceId, origin });
   }
 
+  function renderRequestAvailability(deviceView: boolean) {
+    const retry = onRetryRequests || onRetryInitialization || onRetryRuntime;
+    const unavailable = (
+      <>
+        <p role="alert">
+          {requestsUnavailable
+            ? "Requests are unavailable. Retry to refresh the current list."
+            : "Requests are unavailable until this installation is ready."}
+        </p>
+        {retry && (
+          <button
+            type="button"
+            disabled={sessionState.recoveryAttempts["requests:read"]?.pending}
+            onClick={() => void session.retryRecovery("requests:read", retry)}
+          >
+            Retry Requests
+          </button>
+        )}
+        {sessionState.recoveryAttempts["requests:read"]?.error && (
+          <p role="status">
+            Requests refresh could not be confirmed. Retry again.
+          </p>
+        )}
+      </>
+    );
+    return (
+      <>
+        {requestsLoading && (
+          <p
+            className={deviceView ? "device-request-feedback" : undefined}
+            role="status"
+          >
+            Loading Requests…
+          </p>
+        )}
+        {!requestsLoading &&
+          (requestsUnavailable || !identityReady) &&
+          (deviceView ? (
+            <div className="device-request-feedback">{unavailable}</div>
+          ) : (
+            unavailable
+          ))}
+      </>
+    );
+  }
+
   function renderDestination() {
     return (
       <>
@@ -1522,108 +1583,63 @@ export function ClipboardApp({
             </section>
           </>
         )}
-        {sessionState.destination === "requests" && (
+        {sessionState.destination === "devices" && (
           <>
-            <div className="section-divider"></div>
-            <div>
-              <h2 className="device-section-title" style={{ marginTop: 14 }}>
-                Pending requests
-              </h2>
-              <PairingStatus
-                outcomes={pairingOutcomes}
-                waiting={waiting}
-                errors={pairingErrors}
-                devices={devices}
-                onDismiss={onDismissPairingOutcome}
-              />
-              {trustRequestBehavior.visibleFeedback.map((item) => (
-                <p
-                  key={`${item.deviceId}:${item.requestVersion}`}
-                  role="status"
-                  style={{ overflowWrap: "anywhere" }}
-                >
-                  {item.message}
-                </p>
-              ))}
-              {requestsLoading && <p role="status">Loading Requests…</p>}
-              {!requestsLoading && (requestsUnavailable || !identityReady) && (
-                <>
-                  <p role="alert">
-                    {requestsUnavailable
-                      ? "Requests are unavailable. Retry to refresh the current list."
-                      : "Requests are unavailable until this installation is ready."}
-                  </p>
-                  {(onRetryRequests ||
-                    onRetryInitialization ||
-                    onRetryRuntime) && (
-                    <button
-                      type="button"
-                      disabled={
-                        sessionState.recoveryAttempts["requests:read"]?.pending
-                      }
-                      onClick={() =>
-                        void session.retryRecovery(
-                          "requests:read",
-                          (onRetryRequests ||
-                            onRetryInitialization ||
-                            onRetryRuntime)!
-                        )
-                      }
-                    >
-                      Retry Requests
-                    </button>
-                  )}
-                  {sessionState.recoveryAttempts["requests:read"]?.error && (
-                    <p role="status">
-                      Requests refresh could not be confirmed. Retry again.
-                    </p>
-                  )}
-                </>
-              )}
-              {!requestsLoading &&
-                !requestsUnavailable &&
-                identityReady &&
-                pending.length === 0 && <p>No pending requests.</p>}
-              <div className="pending-list">
-                {pending.map((req) => {
-                  return (
+            {renderRequestAvailability(true)}
+            <PairingStatus
+              outcomes={pairingOutcomes}
+              waiting={waiting}
+              errors={pairingErrors}
+              devices={devices}
+              onDismiss={onDismissPairingOutcome}
+            />
+            {pending.length > 0 && (
+              <section
+                className="device-section device-trust-requests"
+                aria-labelledby="device-trust-requests-heading"
+              >
+                <div className="device-section-heading">
+                  <h2
+                    className="device-section-title"
+                    id="device-trust-requests-heading"
+                  >
+                    Trust requests
+                  </h2>
+                  <span className="device-count">
+                    {pending.length}{" "}
+                    {pending.length === 1 ? "request" : "requests"}
+                  </span>
+                </div>
+                <div>
+                  {pending.map((req) => (
                     <div
+                      className="device-request-row"
                       key={req.deviceId}
-                      className="pending-card"
                       tabIndex={-1}
                       data-session-focus={`request:${req.deviceId}`}
                     >
-                      <div className="pending-card-header">
-                        <div className="peer-avatar">
-                          {req.deviceName?.[0] || "D"}
-                        </div>
-                        <div className="peer-meta">
-                          <MiddleEllipsisText
-                            className="peer-name"
-                            text={req.deviceName}
-                          />
-                          <span className="peer-sub" title={req.deviceId}>
-                            {req.deviceId}
-                          </span>
-                        </div>
+                      <div className="device-request-body">
+                        <span className="device-request-name">
+                          {req.deviceName || "Unknown device"}
+                        </span>
+                        <dl className="device-request-details">
+                          <div>
+                            <dt>Peer ID</dt>
+                            <dd>{req.deviceId}</dd>
+                          </div>
+                          <div>
+                            <dt>Request sent</dt>
+                            <dd>{formatRequestSentTime(req.issuedAtUnixMs)}</dd>
+                          </div>
+                        </dl>
+                        {trustRequestBehavior.isPending(req) && (
+                          <p role="status">Deciding Trust Request…</p>
+                        )}
                       </div>
-                      <div className="pending-actions">
+                      <div className="device-request-actions">
                         <button
-                          className="primary-button compact-button"
-                          disabled={
-                            !identityReady ||
-                            requestsLoading ||
-                            requestsUnavailable ||
-                            trustRequestBehavior.isPending(req)
-                          }
-                          onClick={() =>
-                            void trustRequestBehavior.decide(req, true)
-                          }
-                        >
-                          Accept
-                        </button>
-                        <button
-                          className="text-button"
+                          type="button"
+                          aria-label={`Reject request from ${req.deviceName || "Unknown device"} (Peer ID: ${req.deviceId})`}
                           disabled={
                             !identityReady ||
                             requestsLoading ||
@@ -1636,18 +1652,30 @@ export function ClipboardApp({
                         >
                           Reject
                         </button>
+                        <button
+                          type="button"
+                          className="device-request-approve"
+                          aria-label={`Approve request from ${req.deviceName || "Unknown device"} (Peer ID: ${req.deviceId})`}
+                          disabled={
+                            !identityReady ||
+                            requestsLoading ||
+                            requestsUnavailable ||
+                            trustRequestBehavior.isPending(req)
+                          }
+                          onClick={() =>
+                            void trustRequestBehavior.decide(req, true)
+                          }
+                        >
+                          Approve
+                        </button>
                       </div>
-                      {trustRequestBehavior.isPending(req) && (
-                        <p role="status">Deciding Trust Request…</p>
-                      )}
                     </div>
-                  );
-                })}
-              </div>
-            </div>
+                  ))}
+                </div>
+              </section>
+            )}
           </>
         )}
-
         <div className="section-divider"></div>
 
         {sessionState.destination === "devices" && (
@@ -2386,7 +2414,7 @@ export function ClipboardApp({
 
   function renderNavigation() {
     const openDestination = (
-      destination: "history" | "devices" | "requests" | "settings" | "relays",
+      destination: "history" | "devices" | "settings" | "relays",
       filterMode: "all" | "pinned" | "links" = "all"
     ) => {
       session.close();
@@ -2411,26 +2439,14 @@ export function ClipboardApp({
         {(
           [
             { key: "history", label: "History", icon: "clipboard" },
-            { key: "pinned", label: "Pinned", icon: "pin" },
-            { key: "links", label: "Links", icon: "links" },
             { key: "devices", label: "Devices", icon: "computer" },
             { key: "relays", label: "Relays", icon: "relay" },
-            { key: "requests", label: "Requests", icon: "requests" },
             { key: "settings", label: "Settings", icon: "settings" },
           ] as const
         ).map(({ key, label, icon }) => {
           const active =
-            (key === "history" &&
-              sessionState.destination === "history" &&
-              filterMode === "all") ||
-            (key === "pinned" &&
-              sessionState.destination === "history" &&
-              filterMode === "pinned") ||
-            (key === "links" &&
-              sessionState.destination === "history" &&
-              filterMode === "links") ||
+            (key === "history" && sessionState.destination === "history") ||
             (key === "devices" && sessionState.destination === "devices") ||
-            (key === "requests" && sessionState.destination === "requests") ||
             (key === "relays" && sessionState.destination === "relays") ||
             (key === "settings" && sessionState.destination === "settings");
           return (
@@ -2438,34 +2454,14 @@ export function ClipboardApp({
               type="button"
               key={key}
               aria-current={active ? "page" : undefined}
-              data-session-focus={
-                key === "history"
-                  ? "destination:history"
-                  : key === "pinned" || key === "links"
-                    ? `destination:history:${key}`
-                    : `destination:${key}`
-              }
-              onClick={() => {
-                if (key === "pinned" || key === "links") {
-                  openDestination("history", key);
-                } else {
-                  openDestination(key);
-                }
-              }}
+              data-session-focus={`destination:${key}`}
+              onClick={() => openDestination(key)}
             >
               <Icon name={icon} />
               <span>{label}</span>
-              {key === "requests" &&
-                (requestsLoading ? (
-                  " (loading)"
-                ) : requestsUnavailable ? (
-                  " (unavailable)"
-                ) : pending.length + waiting.length > 0 ? (
-                  <span aria-label="active requests">
-                    {" "}
-                    ({pending.length + waiting.length})
-                  </span>
-                ) : null)}
+              {key === "devices" && pending.length > 0 && (
+                <span> ({pending.length})</span>
+              )}
             </button>
           );
         })}
@@ -2842,7 +2838,7 @@ export function ClipboardApp({
               session.update({
                 destination:
                   issue.scope === "pairing"
-                    ? "requests"
+                    ? "devices"
                     : issue.scope === "relay" ||
                         (issue.scope === "task" &&
                           ["relay-edit", "relay-action", "relay"].includes(

@@ -956,6 +956,7 @@ export class AndroidClient {
         deviceId: request.initiatorPeerId,
         deviceName: request.deviceName,
         requestVersion: request.requestVersion,
+        issuedAtUnixMs: request.issuedAtUnixMs,
       }));
       await this.emitState();
     },

@@ -19,7 +19,10 @@ export type Identity = {
   deviceName: string;
 };
 
-export type PendingRequest = Device & { requestVersion: string };
+export type PendingRequest = Device & {
+  requestVersion: string;
+  issuedAtUnixMs?: string;
+};
 export type PairingWaiting = { targetPeerId: string; expiresAtUnixMs: number };
 export type PairingError = {
   targetPeerId: string;

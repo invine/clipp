@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("notification selection waits for Requests authority and returns to the suspended Pairing draft", async ({
+test("notification selection waits for request authority and returns to the suspended Pairing draft", async ({
   page,
 }) => {
   await page.goto("/notification-journeys.html");
@@ -21,11 +21,13 @@ test("notification selection waits for Requests authority and returns to the sus
 
   await page.getByRole("button", { name: "Publish Requests ready" }).click();
   await expect(
-    page.getByRole("heading", { name: "Requests", exact: true })
+    page.getByRole("heading", { name: "Devices", exact: true })
   ).toBeVisible();
   await expect(page.getByTestId("acknowledged-notifications")).toHaveText(
     '["notification-1"]'
   );
+  const request = page.locator('[data-session-focus="request:request-peer"]');
+  await expect(request).toBeVisible();
   await page.getByRole("button", { name: "Back to previous task" }).click();
   await expect(input).toHaveValue("retained pairing draft");
 });
@@ -93,7 +95,7 @@ test("notification availability failures stay visible until refreshed and permis
   await expect(page.getByText("App notifications: Allowed.")).toBeVisible();
 });
 
-test("a notification for a removed request routes to Requests with a recovery notice", async ({
+test("a notification for a removed request routes to Devices with a recovery notice", async ({
   page,
 }) => {
   await page.goto("/notification-journeys.html");
@@ -106,9 +108,9 @@ test("a notification for a removed request routes to Requests with a recovery no
     .getByRole("button", { name: "Select removed Request notification" })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Requests", exact: true })
+    page.getByRole("heading", { name: "Devices", exact: true })
   ).toBeVisible();
   await expect(
-    page.getByText("This Request is no longer available. Open Requests.")
+    page.getByText("This Request is no longer available.")
   ).toBeVisible();
 });

@@ -227,7 +227,7 @@ try {
   assert.equal((await client.getApprovalEntries()).length, 1);
   authority.ready = true;
   await bound.refresh();
-  assert.equal(session.getSnapshot().destination, "requests");
+  assert.equal(session.getSnapshot().destination, "devices");
   assert.deepEqual(session.getSnapshot().tasks, []);
   assert.equal(session.pairing.getSnapshot().raw, "retained raw input");
   session.back();

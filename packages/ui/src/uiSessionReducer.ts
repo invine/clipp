@@ -19,7 +19,7 @@ export type SessionTask = {
 export type RelayTaskResume = { resume(): string | null };
 
 export type NotificationReturn = {
-  destination: "history" | "devices" | "settings" | "requests" | "relays";
+  destination: "history" | "devices" | "settings" | "relays";
   focusKey: string | null;
   showNav: boolean;
   settingsCategory?:
@@ -35,7 +35,7 @@ export type UiSessionNavigationState = {
   sourceFilter: string;
   filterMode: "all" | "pinned" | "links";
   showNav: boolean;
-  destination: "history" | "devices" | "settings" | "requests" | "relays";
+  destination: "history" | "devices" | "settings" | "relays";
   tasks: SessionTask[];
   focusKey: string | null;
   scroll: Record<string, number>;
@@ -147,15 +147,16 @@ export function reduceUiSessionNavigation<T extends UiSessionNavigationState>(
         ...state,
         notificationReturn,
         tasks: [],
-        destination: "requests",
+        destination: "devices",
         taskNotice:
           hasRequest && !event.requestAvailable
-            ? "This Request is no longer available. Open Requests."
+            ? "This Request is no longer available."
             : null,
         showNav: false,
-        focusKey: event.destination.entity
-          ? `request:${event.destination.entity}`
-          : "destination:requests",
+        focusKey:
+          event.destination.entity && event.requestAvailable
+            ? `request:${event.destination.entity}`
+            : "destination:devices",
       };
     }
     case "return-from-notification": {

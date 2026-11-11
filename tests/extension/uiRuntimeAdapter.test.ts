@@ -308,3 +308,33 @@ it("reports missing responses and removes document listeners and polling on stop
   expect(f.stoppedPolls()).toBe(1);
   await f.flush();
 });
+
+it.each(["popup", "page"] as const)(
+  "%s forwards a JSON-serialized Trust Request sent time",
+  async (surface) => {
+    const f = fixture(surface);
+    f.adapter.start?.();
+    await f.flush();
+    const state = runtimeState("local", 2).state;
+    const serialized = JSON.stringify({
+      type: "runtimeState",
+      state: {
+        ...state,
+        pending: [
+          {
+            deviceId: "peer-one",
+            deviceName: "Phone",
+            requestVersion: "v1",
+            issuedAtUnixMs: "1704067200000",
+          },
+        ],
+      },
+    });
+    f.publish(JSON.parse(serialized));
+    await settle();
+    expect(f.adapter.getSnapshot().pending[0].issuedAtUnixMs).toBe(
+      "1704067200000"
+    );
+    await f.adapter.stop?.();
+  }
+);

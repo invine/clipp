@@ -668,7 +668,7 @@ it("notification selection opens reconciled Requests and Back restores the pendi
     )
   ).toBe("applied");
   expect(session.getSnapshot()).toMatchObject({
-    destination: "requests",
+    destination: "devices",
     tasks: [],
     search: "retained query",
   });
@@ -754,7 +754,7 @@ it.each(["issues", "relay"] as const)(
       )
     ).toBe("applied");
     expect(session.getSnapshot()).toMatchObject({
-      destination: "requests",
+      destination: "devices",
       tasks: [],
       search: "retained query",
     });
@@ -762,7 +762,7 @@ it.each(["issues", "relay"] as const)(
     await saving;
     session.back();
     expect(session.getSnapshot()).toMatchObject({
-      destination: kind === "relay" ? "settings" : "requests",
+      destination: kind === "relay" ? "settings" : "devices",
       tasks: [{ kind }],
     });
     if (kind === "relay")
@@ -877,9 +877,9 @@ it("a stale second selection reconciles Requests and cannot replay over restored
     )
   ).toBe("unavailable");
   expect(session.getSnapshot()).toMatchObject({
-    destination: "requests",
+    destination: "devices",
     tasks: [],
-    taskNotice: "This Request is no longer available. Open Requests.",
+    taskNotice: "This Request is no longer available.",
   });
   session.back();
   expect(session.getSnapshot().tasks.at(-1)?.kind).toBe("issues");
@@ -1208,11 +1208,11 @@ it("accepts a legacy navigation time range but normalizes it away", () => {
 
   const session = createUiSession();
   expect(
-    session.acceptDestination(
-      "legacy-time-filter",
-      destination!,
-      { ready: true, clipIds: ["selected"], requestIds: [] }
-    )
+    session.acceptDestination("legacy-time-filter", destination!, {
+      ready: true,
+      clipIds: ["selected"],
+      requestIds: [],
+    })
   ).toBe("applied");
   expect(session.getSnapshot()).toMatchObject({
     search: "needle",
