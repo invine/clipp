@@ -69,7 +69,11 @@ function candidateFixture(target = "com.clipp.app.acceptance") {
   script(path.join(bin, "java"), "echo 'openjdk version \"21.0.13\"'\n");
   script(
     path.join(bin, "aapt2"),
-    `case "$*" in version) echo AAPT2 ;; *xmltree*) echo 'A: android:targetPackage(0x01010021)="${target}"' ;; *androidTest.apk*) echo "package: name='com.clipp.app.acceptance.test'" ;; *) echo "package: name='com.clipp.app.acceptance'" ;; esac\n`
+    `case "$*" in version) echo AAPT2 ;; *xmltree*androidTest.apk*) echo 'A: android:targetPackage(0x01010021)="${target}"' ;; *xmltree*app-acceptance.apk*) echo 'A: android:scheme(0x01010027)="clipp-relay-acceptance"' ;; *androidTest.apk*) echo "package: name='com.clipp.app.acceptance.test'" ;; *) echo "package: name='com.clipp.app.acceptance'" ;; esac\n`
+  );
+  script(
+    path.join(bin, "apksigner"),
+    'if [ "$1" = "--version" ]; then echo 35.0.0; else echo "Signer #1 certificate SHA-256 digest: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; fi\n'
   );
   script(
     path.join(source, "apps/android/android/gradlew"),
@@ -116,6 +120,7 @@ function candidateFixture(target = "com.clipp.app.acceptance") {
           JAVA_HOME: "",
           PATH: bin + path.delimiter + process.env.PATH,
           CLIPP_ANDROID_AAPT2: path.join(bin, "aapt2"),
+          CLIPP_ANDROID_APKSIGNER: path.join(bin, "apksigner"),
         },
         timeout: 15000,
       }
@@ -137,6 +142,13 @@ test("the maintained Android builder freezes a source-bound acceptance app/test 
       schemaVersion: 2,
       dirty: false,
       applicationId: "com.clipp.app.acceptance",
+      callbackScheme: "clipp-relay-acceptance",
+      signatures: {
+        appCertificateSha256:
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        testCertificateSha256:
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      },
       testArtifact: {
         applicationId: "com.clipp.app.acceptance.test",
         targetPackage: "com.clipp.app.acceptance",

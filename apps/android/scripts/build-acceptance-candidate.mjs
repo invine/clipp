@@ -77,11 +77,13 @@ const java = process.env.JAVA_HOME
 const javaVersion = run(java, ["-version"], root, true);
 assert(/version "21[."]/i.test(javaVersion), "jdk_21_required");
 const aapt = process.env.CLIPP_ANDROID_AAPT2 || "aapt2";
+const apksigner = process.env.CLIPP_ANDROID_APKSIGNER || "apksigner";
 const toolchain = {
   node: process.version,
   npm: run("npm", ["--version"], root, true),
   java: javaVersion,
   aapt2: run(aapt, ["version"], root, true),
+  apksigner: run(apksigner, ["--version"], root, true),
 };
 run("npm", ["run", "build"], android);
 run("npm", ["run", "cap:sync"], android);
@@ -134,6 +136,30 @@ assert.equal(
   "com.clipp.app.acceptance",
   "candidate_instrumentation_target_mismatch"
 );
+const appManifest = run(
+  aapt,
+  ["dump", "xmltree", "--file", "AndroidManifest.xml", app],
+  root,
+  true
+);
+assert(
+  /android:scheme(?:\([^)]*\))?\s*=\s*"clipp-relay-acceptance"/.test(
+    appManifest
+  ),
+  "candidate_callback_scheme_mismatch"
+);
+const certificateSha256 = (apk) => {
+  const output = run(apksigner, ["verify", "--print-certs", apk], root, true);
+  const digest = output.match(
+    /Signer #1 certificate SHA-256 digest:\s*([a-f0-9]{64})/i
+  )?.[1];
+  assert(digest, "candidate_signature_unavailable");
+  return digest.toLowerCase();
+};
+const signatures = {
+  appCertificateSha256: certificateSha256(app),
+  testCertificateSha256: certificateSha256(test),
+};
 const hash = async (file) =>
   createHash("sha256")
     .update(await readFile(file))
@@ -158,6 +184,8 @@ const provenance = {
   artifact: path.basename(app),
   artifactSha256: appHash,
   applicationId: "com.clipp.app.acceptance",
+  callbackScheme: "clipp-relay-acceptance",
+  signatures,
   testArtifact: {
     file: path.basename(test),
     sha256: testHash,
