@@ -238,6 +238,21 @@ function relayStatusFor(connection: RelayConnectionInfo | undefined) {
   };
 }
 
+function formatRequestSentTime(value: string | undefined): string {
+  if (!value || !/^(0|[1-9]\d*)$/.test(value)) return "Unavailable";
+  try {
+    const milliseconds = BigInt(value);
+    if (milliseconds > 8640000000000000n) return "Unavailable";
+    const date = new Date(Number(milliseconds));
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(date);
+  } catch {
+    return "Unavailable";
+  }
+}
+
 export type ClipboardAppProps = {
   /** Runtime composition lifetime. Replacing it retires obsolete UI work. */
   runtimeOwner?: object;
@@ -1603,7 +1618,7 @@ export function ClipboardApp({
                           </div>
                           <div>
                             <dt>Request sent</dt>
-                            <dd>Unavailable</dd>
+                            <dd>{formatRequestSentTime(req.issuedAtUnixMs)}</dd>
                           </div>
                         </dl>
                         {trustRequestBehavior.isPending(req) && (

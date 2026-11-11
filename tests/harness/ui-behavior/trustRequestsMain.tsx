@@ -189,6 +189,28 @@ function ScenarioControls({
       </button>
       <button
         type="button"
+        onClick={() =>
+          adapter.publish({
+            pending: [{ ...initialRequest, issuedAtUnixMs: "1704067200000" }],
+          })
+        }
+      >
+        Publish dated request
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          adapter.publish({
+            pending: [
+              { ...initialRequest, issuedAtUnixMs: "18446744073709551615" },
+            ],
+          })
+        }
+      >
+        Publish unrepresentable request time
+      </button>
+      <button
+        type="button"
         onClick={() => adapter.publish({ pending: [initialRequest] })}
       >
         Publish first pending request

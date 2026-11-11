@@ -147,7 +147,9 @@ export function createPendingTrustRequestCoordinator(options: {
     owner?: TransportOwner
   ): void | Promise<void>;
   onChanged?(
-    requests: Array<PendingTrustRequest & { requestVersion: string }>
+    requests: Array<
+      PendingTrustRequest & { requestVersion: string; issuedAtUnixMs?: string }
+    >
   ): void | Promise<void>;
   validityWindowMs?: number;
   clockSkewAllowanceMs?: number;
@@ -155,6 +157,11 @@ export function createPendingTrustRequestCoordinator(options: {
   const notificationId = (peerId: string) => `pairing-request-${peerId}`;
   const expiryTimers = new Map<string, unknown>();
   const pendingMutations = new Map<string, Promise<void>>();
+  // Only metadata derived from a verified envelope may cross the UI boundary.
+  const verifiedTimes = new Map<
+    string,
+    { version: string; issuedAtUnixMs: string }
+  >();
   let startPromise: Promise<void> | undefined;
   let unsubscribeNotificationSelection: (() => void) | undefined;
   let stopped = false;
@@ -210,10 +217,16 @@ export function createPendingTrustRequestCoordinator(options: {
       .join("");
   const list = async () =>
     Promise.all(
-      (await options.store.list()).map(async (request) => ({
-        ...request,
-        requestVersion: await requestVersion(request),
-      }))
+      (await options.store.list()).map(async (request) => {
+        const version = await requestVersion(request);
+        const verified = verifiedTimes.get(request.initiatorPeerId);
+        return {
+          ...request,
+          requestVersion: version,
+          issuedAtUnixMs:
+            verified?.version === version ? verified.issuedAtUnixMs : undefined,
+        };
+      })
     );
   const publish = async () => options.onChanged?.(await list());
   const serializeMutation = <T>(
@@ -264,6 +277,7 @@ export function createPendingTrustRequestCoordinator(options: {
     }
     clearTimer(peerId);
     await options.store.remove(peerId);
+    verifiedTimes.delete(peerId);
     // Keep native show/cancel ordering without making OS work authoritative for
     // request removal. A late show must be cancelled before this ID is reused.
     void enqueueNotification(peerId, () =>
@@ -433,8 +447,17 @@ export function createPendingTrustRequestCoordinator(options: {
               continue;
             }
             await options.store.save(request);
+            const version = await requestVersion(request);
+            const envelope = decodeTrustRequestEnvelope(
+              request.requestEnvelope
+            )!;
+            const payload = decodeTrustRequestPayload(envelope.signedPayload)!;
+            verifiedTimes.set(request.initiatorPeerId, {
+              version,
+              issuedAtUnixMs: payload.issuedAtUnixMs.toString(),
+            });
             scheduleExpiry(request);
-            restored.push({ request, version: await requestVersion(request) });
+            restored.push({ request, version });
           }
           await publish();
           for (const { request, version } of restored)
@@ -567,6 +590,10 @@ export function createPendingTrustRequestCoordinator(options: {
             }
           }
           await options.store.save(request);
+          verifiedTimes.set(request.initiatorPeerId, {
+            version: await requestVersion(request),
+            issuedAtUnixMs: payload.issuedAtUnixMs.toString(),
+          });
           scheduleExpiry(request);
           await publish();
           if (!existing) void show(request, await requestVersion(request));
@@ -659,6 +686,7 @@ export function createPendingTrustRequestCoordinator(options: {
       options.notifications.clearSelections?.();
       expiryTimers.forEach((_timer, peerId) => clearTimer(peerId));
       await Promise.allSettled([...pendingMutations.values()]);
+      verifiedTimes.clear();
       // An already admitted native schedule must finish before cancellation;
       // otherwise it could post a notification after this owner has stopped.
       await Promise.allSettled([...notificationWork.values()]);

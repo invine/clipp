@@ -96,7 +96,11 @@ describe("pending Trust Requests", () => {
       true
     );
     expect(changed).toHaveBeenLastCalledWith([
-      expect.objectContaining({ initiatorPeerId, deviceName: "Mobile" }),
+      expect.objectContaining({
+        initiatorPeerId,
+        deviceName: "Mobile",
+        issuedAtUnixMs: "1000",
+      }),
     ]);
     expect(opened).not.toHaveBeenCalled();
   });
@@ -597,11 +601,13 @@ describe("pending Trust Requests", () => {
     expect(await coordinator.receive(initiatorPeerId, frame(1_000n))).toBe(
       true
     );
+    expect((await coordinator.list())[0].issuedAtUnixMs).toBe("1000");
     now = 1_100;
     expect(await coordinator.receive(initiatorPeerId, frame(1_100n))).toBe(
       true
     );
 
+    expect((await coordinator.list())[0].issuedAtUnixMs).toBe("1100");
     expect(shown).toEqual([`pairing-request-${initiatorPeerId}`]);
     expect(requests.get(initiatorPeerId).expiresAtUnixMs).toBe(721_100n);
   });
@@ -1372,6 +1378,71 @@ describe("pending Trust Requests", () => {
     expiry();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(changes).toEqual([1, 0]);
+  });
+
+  it("projects a restored request time only after validating the stored envelope", async () => {
+    const requests = new Map<
+      string,
+      import("../../../packages/core/pairing/pending").PendingTrustRequest
+    >();
+    const store = {
+      list: async () => [...requests.values()],
+      save: async (
+        request: import("../../../packages/core/pairing/pending").PendingTrustRequest
+      ) => void requests.set(request.initiatorPeerId, request),
+      remove: async (id: string) => void requests.delete(id),
+    };
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const makeCoordinator = (verify: () => Promise<boolean>) =>
+      createPendingTrustRequestCoordinator({
+        localPeerId: async () => targetPeerId,
+        store,
+        notifications: {
+          show: async () => undefined,
+          dismiss: async () => undefined,
+          onSelect: () => () => undefined,
+        },
+        lifecycle: { openApprovalView: () => undefined },
+        clock: {
+          now: () => 1_000,
+          setTimeout: () => 1,
+          clearTimeout: () => undefined,
+        },
+        verify,
+      });
+    const original = makeCoordinator(async () => true);
+    await original.receive(
+      initiatorPeerId,
+      encodePairingFrame({
+        kind: "request",
+        envelope: encodeTrustRequestEnvelope({
+          signedPayload: encodeTrustRequestPayload({
+            initiatorPeerId,
+            targetPeerId,
+            deviceName: "Mobile",
+            nameRevision: 0n,
+            issuedAtUnixMs: 1_000n,
+          }),
+          signature: new Uint8Array([1]),
+        }),
+      })
+    );
+    await original.stop();
+    // Legacy storage may contain extra fields; unverified metadata is never projected.
+    Object.assign(requests.get(initiatorPeerId)!, { issuedAtUnixMs: "99999" });
+    const restored = makeCoordinator(async () => {
+      await gate;
+      return true;
+    });
+    const starting = restored.start();
+    expect((await restored.list())[0].issuedAtUnixMs).toBeUndefined();
+    release();
+    await starting;
+    expect((await restored.list())[0].issuedAtUnixMs).toBe("1000");
+    await restored.stop();
   });
 
   it("removes a persisted request that fails full startup revalidation", async () => {

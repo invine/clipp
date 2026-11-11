@@ -436,3 +436,25 @@ it("keeps availability read ordering separate from notification action errors", 
   });
   await adapter.stop?.();
 });
+
+it("forwards a Trust Request's exact sent time through the Electron UI bridge", async () => {
+  const fixture = electronBridge();
+  const adapter = createElectronUiRuntimeAdapter(
+    fixture.bridge,
+    createUiSession()
+  );
+  await adapter.start?.();
+  await fixture.getUpdate()?.({
+    ...fixture.state,
+    pending: [
+      {
+        deviceId: "peer-one",
+        deviceName: "Phone",
+        requestVersion: "v1",
+        issuedAtUnixMs: "1704067200000",
+      },
+    ],
+  });
+  expect(adapter.getSnapshot().pending[0].issuedAtUnixMs).toBe("1704067200000");
+  await adapter.stop?.();
+});

@@ -282,3 +282,21 @@ test("desktop returns to its two-column Devices layout when the last request cle
   expect(restoredLocal).toEqual(originalLocal);
   expect(restoredTrusted).toEqual(originalTrusted);
 });
+
+test.describe("Trust Request sent time", () => {
+  test.use({ locale: "en-US", timezoneId: "UTC" });
+  test("shows a localized date and time and an honest out-of-range fallback", async ({
+    page,
+  }) => {
+    await page.goto("/trust-requests.html?devices");
+    const card = page.getByRole("region", { name: "Trust requests" });
+    await page.getByRole("button", { name: "Publish dated request" }).click();
+    await expect(
+      card.getByText("Jan 1, 2024, 12:00 AM", { exact: true })
+    ).toBeVisible();
+    await page
+      .getByRole("button", { name: "Publish unrepresentable request time" })
+      .click();
+    await expect(card.getByText("Unavailable", { exact: true })).toBeVisible();
+  });
+});

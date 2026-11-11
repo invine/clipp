@@ -590,6 +590,7 @@ let pendingRequests: Array<{
   deviceId: string;
   deviceName: string;
   requestVersion: string;
+  issuedAtUnixMs?: string;
 }> = [];
 const cleanupRejectedPeer = createPairingRejectionCleanup({
   membership: identitySvc,
@@ -1004,6 +1005,7 @@ const pairingPending = createPendingTrustRequestCoordinator({
       deviceId: request.initiatorPeerId,
       deviceName: request.deviceName,
       requestVersion: request.requestVersion,
+      issuedAtUnixMs: request.issuedAtUnixMs,
     }));
     await sharedRuntime.publishState();
   },
