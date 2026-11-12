@@ -1,5 +1,34 @@
 import { expect, test } from "@playwright/test";
 
+test("History keeps Delete visible on desktop and touch", async ({
+  browser,
+}) => {
+  const desktop = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+  });
+  const page = await desktop.newPage();
+  await page.goto("/history-mutations.html?history");
+  const row = page.locator('[data-clip-id="clip-one"]');
+  const remove = row.getByRole("button", { name: "Delete Clip" });
+  await expect(remove).toHaveCSS("opacity", "1");
+  await remove.focus();
+  await expect(remove).toHaveCSS("opacity", "1");
+  await expect(remove).toBeFocused();
+  await desktop.close();
+
+  const touch = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  const phone = await touch.newPage();
+  await phone.goto("/history-mutations.html?history");
+  await expect(
+    phone.getByRole("button", { name: "Delete Clip" }).first()
+  ).toHaveCSS("opacity", "1");
+  await touch.close();
+});
+
 test("the Clipp mark opens navigation on History and remains available on every destination", async ({
   page,
 }) => {

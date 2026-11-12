@@ -4855,7 +4855,7 @@ html[data-host-geometry="android"] .android-host {
   }
 }
 
-/* Final History alignment follows the approved compact list rather than cards. */
+/* History keeps its filters separate from the compact clip list. */
 .workspace-topbar.history-topbar {
   height: 68px;
   min-height: 68px;
@@ -5363,4 +5363,19 @@ html[data-host-geometry="android"] .android-host {
 
 .devices-pane:has(> .device-trust-requests) {
   max-width: 41.125rem;
+}
+
+/* One shared surface keeps long histories compact and matches Devices and Relays. */
+.history-grid:has(.history-card) {
+  margin-top: 16px;
+  padding: 4px 16px;
+  border-radius: var(--md-radius-lg);
+  background: var(--workspace-panel);
+}
+.history-grid .history-card {
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--clipp-text) 10%, var(--workspace-panel));
+}
+.history-grid .history-card:last-child {
+  border-bottom: 0;
 }
