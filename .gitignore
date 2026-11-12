@@ -1,17 +1,22 @@
 node_modules
 dist
+.DS_Store
 apps/android/android/.idea/
 
 # Local design tooling and independently versioned Sites checkouts
 .codex-attachments/
 .taste-skill/
 .scratch/clipp-history-site/
+/.scratch/clipp-trust-preview-site/
 .scratch/device-page-concepts/site/
 
 # Local runtime state and diagnostic output
 .clipp-cli-store.json
 rv.json
 package-lock-old.json
+/artifacts/
+/test-results/
 
 # Mutable coordinator tips, local root mappings and private artifact references
 .local/agent-workflow/
+/.local/cleanup-archive/

@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Clipp — Relays mockup</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <img src="clipp-icon.png" alt="" /><strong>Clipp</strong>
+        </div>
+        <div class="nav-label">Your workspace</div>
+        <nav aria-label="Clipp destinations">
+          <a href="#"><span>History</span></a
+          ><a href="#"><span>Pinned</span></a
+          ><a href="#"><span>Links</span></a
+          ><a href="#"><span>Devices</span></a
+          ><a href="#"><span>Requests</span></a
+          ><a class="selected" href="#relays" aria-current="page"
+            ><span>Relays</span></a
+          ><a href="#"><span>Settings</span></a>
+        </nav>
+        <div class="device">
+          <span class="device-dot"></span>
+          <div><strong>This device</strong><small>Clipp is running</small></div>
+        </div>
+      </aside>
+      <div class="workspace">
+        <header class="topbar">
+          <button
+            class="menu"
+            aria-label="Open navigation"
+            aria-expanded="false"
+          >
+            <img src="clipp-icon.png" alt="" />
+          </button>
+          <h1 class="top-title">Relays</h1>
+          <button class="primary header-add" id="add">
+            + <span>Add relay</span>
+          </button>
+        </header>
+        <main class="sheet" id="relays">
+          <div class="content">
+            <div class="summary">
+              <div class="summary-line">
+                <span class="status-dot"></span
+                ><strong id="summary-title">1 relay ready</strong
+                ><span class="summary-divider">·</span
+                ><span id="summary-detail">1 needs attention</span>
+              </div>
+            </div>
+            <section class="relay-card" aria-label="Relays">
+              <div class="list-heading">
+                <h2>Configured relays</h2>
+                <button class="text-button" id="toggle-state">
+                  Show empty state
+                </button>
+              </div>
+              <div class="table" id="relay-list">
+                <div class="table-head">
+                  <span>Relay</span><span>Type</span><span>Status</span
+                  ><span></span>
+                </div>
+                <article class="relay-row">
+                  <div class="relay-identity">
+                    <strong>Home relay</strong
+                    ><span>https://relay.example.net</span>
+                  </div>
+                  <div class="type">Authenticated discovery</div>
+                  <div class="status ready">
+                    <span class="status-dot"></span>Ready
+                  </div>
+                  <details>
+                    <summary aria-label="Home relay actions">•••</summary>
+                    <div class="actions">
+                      <button>Edit</button><button>Manage account</button
+                      ><button>Remove</button>
+                    </div>
+                  </details>
+                </article>
+                <article class="relay-row">
+                  <div class="relay-identity">
+                    <strong>Travel relay</strong
+                    ><span>https://travel.example.net</span>
+                  </div>
+                  <div class="type">Authenticated discovery</div>
+                  <div class="status attention">
+                    <span class="status-dot"></span>Login needed
+                  </div>
+                  <button class="row-action" id="login">Log in</button>
+                </article>
+              </div>
+              <div class="empty" id="empty" hidden>
+                <h3>No relays configured</h3>
+                <p>
+                  Add a relay to help your devices connect when a direct
+                  connection isn’t available.
+                </p>
+                <button class="secondary" id="empty-add">+ Add relay</button>
+              </div>
+            </section>
+            <section class="about">
+              <h2>About relays</h2>
+              <p>
+                Relays help devices find a path to each other when they can’t
+                connect directly.
+              </p>
+              <p>
+                Removing a relay removes its configuration and local credential
+                from this device. It doesn’t delete your relay account.
+              </p>
+            </section>
+          </div>
+        </main>
+      </div>
+    </div>
+    <dialog id="editor">
+      <form method="dialog">
+        <div class="dialog-head">
+          <div>
+            <h2>Add relay</h2>
+            <p>Configure a relay for this device.</p>
+          </div>
+          <button class="close" value="cancel" aria-label="Close">×</button>
+        </div>
+        <label>Name<input placeholder="e.g. Home relay" /></label
+        ><label
+          >Type<select id="kind">
+            <option>Authenticated discovery</option>
+            <option>Unauthenticated Peer ID</option>
+          </select></label
+        ><label id="peer-label" hidden
+          >Peer ID<input placeholder="Relay Peer ID" /></label
+        ><label
+          ><span id="endpoint-label">HTTPS discovery URL</span
+          ><textarea placeholder="https://relay.example.net"></textarea>
+        </label>
+        <div class="dialog-actions">
+          <button class="secondary" value="cancel">Cancel</button
+          ><button class="primary" value="save">Save relay</button>
+        </div>
+        <p class="prototype-note">Preview only — changes are not saved.</p>
+      </form>
+    </dialog>
+    <script src="script.js"></script>
+  </body>
+</html>
