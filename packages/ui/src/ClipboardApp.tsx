@@ -460,7 +460,7 @@ export function ClipboardApp({
   runtimeOwner,
 }: ClipboardAppProps) {
   const [isNarrow, setIsNarrow] = useState(false);
-  const [isRelayDesktop, setIsRelayDesktop] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
   const [isCramped, setIsCramped] = useState(false);
   const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
   const [session] = useState(() => providedSession ?? createUiSession());
@@ -497,6 +497,7 @@ export function ClipboardApp({
   );
   const activeTask = sessionState.tasks[sessionState.tasks.length - 1];
   const { search, sourceFilter, filterMode, showNav } = sessionState;
+  const compactNavOpen = showNav && !isDesktop;
   const setSearch = (search: string) => session.update({ search });
   const setSourceFilter = (sourceFilter: string) =>
     session.update({ sourceFilter });
@@ -938,7 +939,7 @@ export function ClipboardApp({
   useEffect(() => {
     function handleResize() {
       const size = hostContentSize(window, document);
-      setIsRelayDesktop(size.width > 1100);
+      setIsDesktop(size.width > NARROW_CONTENT_WIDTH);
       setIsNarrow(
         size.width <=
           (sessionState.destination === "devices" ? 640 : NARROW_CONTENT_WIDTH)
@@ -964,6 +965,14 @@ export function ClipboardApp({
       window.removeEventListener(HOST_GEOMETRY_EVENT, handleResize);
     };
   }, [sessionState.destination]);
+
+  useEffect(() => {
+    if (isDesktop && showNav)
+      session.update({
+        showNav: false,
+        focusKey: `destination:${sessionState.destination}`,
+      });
+  }, [isDesktop, showNav, session, sessionState.destination]);
 
   const deviceNameMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -2423,7 +2432,7 @@ export function ClipboardApp({
         filterMode,
         showNav: false,
         focusKey:
-          (isNarrow || showNav) && !(destination === "relays" && isRelayDesktop)
+          (isNarrow || showNav) && !isDesktop
             ? "nav-toggle"
             : filterMode === "all"
               ? `destination:${destination}`
@@ -2563,16 +2572,12 @@ export function ClipboardApp({
         }
       }}
       data-session-scroll="workspace"
-      className={`app-shell ${sessionState.destination === "relays" && isRelayDesktop ? "relays-desktop" : ""} ${isNarrow ? "workspace-narrow" : "workspace-wide"} ${isCramped ? "workspace-cramped" : ""} ${showNav ? "nav-open" : ""} ${initializationError ? "app-shell-with-initialization-error" : ""}`}
+      className={`app-shell ${isDesktop ? "workspace-desktop" : ""} ${isNarrow ? "workspace-narrow" : "workspace-wide"} ${isCramped ? "workspace-cramped" : ""} ${compactNavOpen ? "nav-open" : ""} ${initializationError ? "app-shell-with-initialization-error" : ""}`}
     >
       <aside
         className="workspace-sidebar"
-        inert={
-          !showNav && !(sessionState.destination === "relays" && isRelayDesktop)
-        }
-        aria-hidden={
-          !showNav && !(sessionState.destination === "relays" && isRelayDesktop)
-        }
+        inert={!compactNavOpen && !isDesktop}
+        aria-hidden={!compactNavOpen && !isDesktop}
       >
         <div className="workspace-brand">
           <span className="app-logo">
@@ -2601,7 +2606,7 @@ export function ClipboardApp({
           </button>
         </div>
       </aside>
-      {showNav && (
+      {compactNavOpen && (
         <button
           type="button"
           className="workspace-navigation-scrim"
@@ -2618,9 +2623,9 @@ export function ClipboardApp({
           <button
             type="button"
             className="icon-button navigation-toggle"
-            aria-label={showNav ? "Close navigation" : "Open navigation"}
+            aria-label={compactNavOpen ? "Close navigation" : "Open navigation"}
             aria-controls="workspace-navigation"
-            aria-expanded={showNav}
+            aria-expanded={compactNavOpen}
             data-session-focus="nav-toggle"
             onClick={() =>
               session.update({
@@ -2629,7 +2634,7 @@ export function ClipboardApp({
               })
             }
           >
-            {showNav ? (
+            {compactNavOpen ? (
               <Icon name="close" />
             ) : (
               <img src={clippPurpleIcon} alt="" draggable={false} />
@@ -2675,7 +2680,7 @@ export function ClipboardApp({
                   session.open({ kind: "pairing", origin: "pairing-start" })
                 }
               >
-                Pair
+                <span className="header-action-face">Pair</span>
               </button>
               <button
                 type="button"
@@ -2685,7 +2690,9 @@ export function ClipboardApp({
                 data-session-focus="pairing-qr"
                 onClick={handleShowQr}
               >
-                <Icon name="qr" />
+                <span className="header-action-face">
+                  <Icon name="qr" />
+                </span>
               </button>
             </div>
           )}
@@ -2707,7 +2714,7 @@ export function ClipboardApp({
                 }}
                 disabled={relaySaving}
               >
-                Add relay
+                <span className="header-action-face">Add relay</span>
               </button>
             )}
           {sessionState.destination !== "devices" &&

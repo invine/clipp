@@ -2,6 +2,8 @@
 
 Date: 2026-10-09. **Approved: the user accepted all four recommendations in this round.** Owned by [Decide visual consistency and efficient layout](issues/07-decide-layout-and-visual-direction.md). This is the accepted study contract for later implementation; it is not a production implementation or native acceptance result.
 
+**Later desktop navigation decision (2026-11-12):** The user requested that History, Devices and Settings use the same persistent desktop sidebar as Relays when usable content width exceeds 1100 CSS pixels. This supersedes the no-permanent-sidebar choice below at desktop width. Tablet and phone widths retain compact navigation.
+
 ## Preserve the selected design
 
 The existing decisions remain the baseline: compact History rows narrow and equal-height multi-column cards wide; no permanent sidebar; a Clipp/status line above Search; Search first with Filters and Send; All/Pinned inside Filters; the approved Copy/Pin/Delete/detail treatment; M1 Compact summaries for Devices with text statuses; M3 category-based Settings; and the approved S2 connection indicator. [The map](map.md#decisions-so-far) points to the owning decisions.

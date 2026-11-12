@@ -62,6 +62,7 @@ test("scenario reset retires an outstanding Pairing result", async ({
 test("the scenario catalog publishes connection observations and opens each workflow", async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 768, height: 900 });
   await page.goto("/");
   await page.getByRole("button", { name: "Open navigation" }).click();
   await page.getByRole("navigation", { name: "Clipp destinations" }).getByRole("button", { name: "History" }).click();
