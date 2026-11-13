@@ -3,6 +3,7 @@ import "../../../packages/ui/src/host.css";
 import "./android-host.css";
 import React, { useEffect, useMemo, useSyncExternalStore } from "react";
 import { ClipboardWorkspace } from "../../../packages/ui/src/ClipboardWorkspace";
+import { useKeyboardNavigation } from "../../../packages/ui/src/useKeyboardNavigation";
 import type { AndroidAppState, createAndroidRuntime } from "./client";
 import { bindAndroidHostGeometry } from "./hostGeometryNative";
 import { createUiSession } from "../../../packages/ui/src/uiSession";
@@ -20,6 +21,7 @@ export type AndroidAppRuntime = Pick<
 >;
 
 export function AndroidApp({ runtime }: { runtime: AndroidAppRuntime }) {
+  const keyboardNavigation = useKeyboardNavigation();
   const session = useMemo(() => createUiSession(), []);
   const taskInput = useMemo(() => createHostTaskInput(session), [session]);
   const pairingScanner = useMemo(
@@ -53,7 +55,7 @@ export function AndroidApp({ runtime }: { runtime: AndroidAppRuntime }) {
   );
 
   return (
-    <div className="android-host">
+    <div className="android-host" data-keyboard-navigation={keyboardNavigation}>
       <ClipboardWorkspace
         adapter={adapter}
         taskInput={taskInput}

@@ -2049,6 +2049,11 @@
   outline: 3px solid var(--clipp-focus);
   outline-offset: 2px;
 }
+/* Chromium can mark programmatic focus as focus-visible on launch. */
+[data-keyboard-navigation="false"]
+  :is(.app-main, .navigation-toggle, .send-control > button):focus-visible {
+  outline: none;
+}
 .search-field:focus-within {
   border-color: var(--clipp-focus);
 }
